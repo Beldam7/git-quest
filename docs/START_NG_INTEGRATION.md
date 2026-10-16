@@ -54,7 +54,7 @@ Ranked by the first stat, ties broken by the next ones, then whoever got there f
 
 start.ng serves a **static, already-built** game from a **public GitHub repo**. It never runs `npm install` or `npm run build`.
 
-1. **Build:** `npm run build`. This writes the finished game to `dist/` (Vite's source page lives in `web/`, because a source `index.html` at the top of the repo is refused with "needs building first"). `dist/` is deliberately **not** git-ignored: commit it.
+1. **Build:** `npm run build`. This writes the finished game to `dist/` (Vite's source page is `app.html`, not `index.html`, because a source `index.html` at the top of the repo is refused with "needs building first"; the build renames it to `dist/index.html`). `dist/` is deliberately **not** git-ignored: commit it.
 2. **Check the output:** `dist/` should contain `index.html`, `assets/`, `startng.json` and `cover.png`. Paths are relative (`base: './'`).
 3. **Commit and push** to a **public** GitHub repo (`git add dist` is the step people forget).
 4. **Dry-run the platform's checks** (nothing goes live):
@@ -77,7 +77,7 @@ Name rules: lowercase letters, digits and hyphens, at most 40 characters; `api`,
 
 | Check | Status |
 |---|---|
-| Built `index.html`, relative paths, allowed file types, under 100 MB / 25 MB per file | Satisfied by the Vite build (`web/index.html` -> `dist/index.html`; fonts are `.woff`/`.woff2`; no files over the limits are expected, but check the size of `dist/`) |
+| Built `index.html`, relative paths, allowed file types, under 100 MB / 25 MB per file | Satisfied by the Vite build (`app.html` -> `dist/index.html`; fonts are `.woff`/`.woff2`; no files over the limits are expected, but check the size of `dist/`) |
 | No secrets, no password field, no redirect on load, no obfuscated code | None present. The build is minified, which is allowed |
 | `external_script`, `insecure_link` warnings | Everything is bundled (fonts, scripts, sounds are synthesised). Library code contains `http://www.w3.org/...` XML-namespace strings, which are text, not loaded resources |
 | `no_start_ng_player` warning | The game asks start.ng who is playing (`startng:whoami`) |

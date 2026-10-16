@@ -321,5 +321,5 @@ The earlier sections (and the placeholders they describe) are superseded by the 
 - **Character rule:** the 3D hero now draws every start.ng character field (body, tunic, trousers/skirt, skin, hair color, 7 hair styles, 5 hats, 6 accessories). The old local-only fields (accent colour, materials, cape/helmet/dragon armour) were removed because start.ng's schema replaces them.
 - **Leaderboard:** `public/startng.json` declares four columns (xp, worlds, gems, secrets); scores are saved after each save for signed-in players; the screen reads start.ng's board. The dev mock and demo players remain for `npm run dev`.
 - **Saves:** start.ng has no cloud save for games, so progress is saved in the browser per player id. Documented as a limitation.
-- **Publishing:** the Vite source page moved to `web/` and the build goes to `dist/`, which is now committed (start.ng never builds; a source `index.html` at the repo top is refused). Added `cover.png` and `startng.json`.
+- **Publishing:** the Vite source page is now `app.html` and the build writes `dist/index.html`, which is now committed (start.ng never builds; a source `index.html` at the repo top is refused). Added `cover.png` and `startng.json`.
 - The platform's multiplayer rooms are not used (Git Quest is single-player).
