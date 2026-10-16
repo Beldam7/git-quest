@@ -1,0 +1,10 @@
+{
+  "leaderboard": {
+    "stats": [
+      { "key": "xp", "label": "Total XP", "order": "highest" },
+      { "key": "worlds", "label": "Worlds cleared", "order": "highest" },
+      { "key": "gems", "label": "Gems", "order": "highest" },
+      { "key": "secrets", "label": "Secret missions", "order": "highest" }
+    ]
+  }
+}

@@ -1,0 +1,1 @@
+import{j as r}from"./app-BhqHCVuk.js";import{H as i}from"./HeroModel-DObMmWek.js";function p({appearance:o,position:e,spin:t=!0,speedRef:s}){return r.jsx("group",{position:e,children:r.jsx(i,{appearance:o,spin:t,speedRef:s})})}export{p as P};
