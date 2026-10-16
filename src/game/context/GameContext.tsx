@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import type { ReactNode } from 'react';
-import type { GameProgress, RepositoryState, TerminalLine, GameScreen } from '../types';
+import type { GameProgress, RepositoryState, TerminalLine, GameScreen, CombatEvent } from '../types';
 import { GameEngine } from '../engine/GameEngine';
 import type { GameEngineCallbacks } from '../engine/GameEngine';
 import { MockAuthAdapter } from '../adapters/AuthAdapter';
@@ -8,6 +8,8 @@ import type { AuthState, AuthUser } from '../adapters/AuthAdapter';
 import type { CharacterAppearance } from '../adapters/CharacterAppearanceAdapter';
 import { createAdapters } from '../adapters/config';
 import type { Adapters, AdapterMode } from '../adapters/config';
+import { entryFromProgress } from '../adapters/LeaderboardAdapter';
+import type { LeaderboardEntry } from '../adapters/LeaderboardAdapter';
 
 interface GameContextValue {
   progress: GameProgress | null;
@@ -37,6 +39,24 @@ interface GameContextValue {
   setScreen: (screen: GameScreen) => void;
   saveProgress: () => Promise<void>;
   devSignIn: () => void;
+  /** The most recent combat beat (hit, miss, player-hit, victory, defeat, gem), for HUD and 3D reactions. */
+  lastCombat: CombatEvent | null;
+  /** Recent combat events in order (kept so back-to-back events such as hit + defeated are never lost). */
+  combatEvents: CombatEvent[];
+  /** Increments every time the level restarts so the 3D world can reset cleanly. */
+  runKey: number;
+  restartLevel: () => void;
+  collectGem: (gemId: string) => void;
+  /** Top players. Rejects if the leaderboard backend is not configured. */
+  loadLeaderboard: (limit?: number) => Promise<LeaderboardEntry[]>;
+  leaderboardIsMock: boolean;
+  leaderboardLabel: string;
+  /** Practice mode: wrong commands never cost health. */
+  practiceMode: boolean;
+  setPracticeMode: (on: boolean) => void;
+  /** Send a guest to start.ng to sign in (only when the platform provides sign-in). */
+  signIn: () => void;
+  canSignIn: boolean;
 }
 
 const GameContext = createContext<GameContextValue | null>(null);
@@ -63,12 +83,20 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(() => adapters.auth.getError());
   const [hasSavedGame, setHasSavedGame] = useState(false);
   const [persistenceError, setPersistenceError] = useState<string | null>(null);
+  const [practiceMode, setPracticeModeState] = useState<boolean>(() => {
+    try { return localStorage.getItem('gitquest:practice') === '1'; } catch { return false; }
+  });
+  const practiceRef = useRef(practiceMode);
+  const [lastCombat, setLastCombat] = useState<CombatEvent | null>(null);
+  const [combatEvents, setCombatEvents] = useState<CombatEvent[]>([]);
+  const [runKey, setRunKey] = useState(0);
   const [appearance, setAppearanceState] = useState<CharacterAppearance>(() => adapters.appearance.getAppearance());
 
   const engineRef = useRef<GameEngine | null>(null);
   const savingRef = useRef(false);
   // The authenticated user id the in-memory game belongs to. All persistence is scoped to it.
   const userIdRef = useRef<string | null>(null);
+  const userNameRef = useRef('Adventurer');
 
   const callbacks: GameEngineCallbacks = {
     onProgressUpdate: (p) => setProgress(p),
@@ -80,6 +108,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
     onAchievementUnlock: () => {},
     onDamage: () => {},
     onHeal: () => {},
+    onCombat: (e) => {
+      setLastCombat(e);
+      setCombatEvents((prev) => [...prev.slice(-19), e]);
+      if (e.type === 'restart') setRunKey((k) => k + 1);
+    },
   };
 
   // Auth: follow the adapter. When the user changes (or signs out) drop the in-memory game so
@@ -87,6 +120,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const apply = (state: AuthState, user: AuthUser | null) => {
       const nextId = state === 'authenticated' && user ? user.id : null;
+      userNameRef.current = user?.displayName ?? 'Adventurer';
       if (userIdRef.current !== nextId) {
         userIdRef.current = nextId;
         engineRef.current = null;
@@ -138,6 +172,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const ensureEngine = useCallback(() => {
     if (!engineRef.current) {
       engineRef.current = new GameEngine(callbacks);
+      engineRef.current.setPractice(practiceRef.current);
     }
     return engineRef.current;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -204,6 +239,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
         if (ok) {
           setPersistenceError(null);
           if (data.completedChallenges.length > 0) setHasSavedGame(true);
+          // Best-effort: a leaderboard problem must never block saving.
+          adapters.leaderboard.submit(entryFromProgress(userId, userNameRef.current, data)).catch(() => {});
         } else {
           setPersistenceError('Could not save progress.');
         }
@@ -239,6 +276,25 @@ export function GameProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(timer);
   }, [progress, screen, persist]);
 
+  const restartLevel = useCallback(() => {
+    const engine = ensureEngine();
+    engine.restartLevel();
+    setScreenState(engine.getScreen());
+  }, [ensureEngine]);
+
+  const collectGem = useCallback((gemId: string) => {
+    ensureEngine().collectGem(gemId);
+  }, [ensureEngine]);
+
+  const setPracticeMode = useCallback((on: boolean) => {
+    practiceRef.current = on;
+    setPracticeModeState(on);
+    engineRef.current?.setPractice(on);
+    try { localStorage.setItem('gitquest:practice', on ? '1' : '0'); } catch { /* ignore */ }
+  }, []);
+
+  const loadLeaderboard = useCallback((limit = 20) => adapters.leaderboard.top(limit), [adapters]);
+
   const devSignIn = useCallback(() => {
     if (adapters.auth instanceof MockAuthAdapter) {
       adapters.auth.devSignIn(DEV_USER_ID, 'Dev Player (mock)');
@@ -268,6 +324,18 @@ export function GameProvider({ children }: { children: ReactNode }) {
     setScreen,
     saveProgress,
     devSignIn,
+    lastCombat,
+    combatEvents,
+    runKey,
+    restartLevel,
+    collectGem,
+    loadLeaderboard,
+    leaderboardIsMock: adapters.leaderboard.isMock,
+    leaderboardLabel: adapters.leaderboard.label,
+    practiceMode,
+    setPracticeMode,
+    signIn: () => adapters.auth.signIn?.(),
+    canSignIn: !!adapters.auth.signIn,
   };
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

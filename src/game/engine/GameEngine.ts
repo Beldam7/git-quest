@@ -6,12 +6,14 @@ import type {
   CompletedChallenge,
   GameScreen,
   ProficiencyReport,
+  CombatEvent,
 } from '../types';
 import { executeCommand, createInitialRepoState } from '../simulator/GitSimulator';
 import { WORLDS, secretMissions } from '../data/worlds';
 import { RANKS, ABILITIES, ACHIEVEMENTS, COLLECTIBLES, getRankForProgress, getLevelForXp } from '../data/ranks';
 import { SECRET_MISSIONS } from '../data/secretMissions';
 import { DEFAULT_APPEARANCE } from '../adapters/CharacterAppearanceAdapter';
+import { explainFailure } from './explain';
 import type { CharacterAppearance } from '../adapters/CharacterAppearanceAdapter';
 
 export function createNewProgress(): GameProgress {
@@ -34,6 +36,7 @@ export function createNewProgress(): GameProgress {
     lastSavedAt: null,
     createdAt: Date.now(),
     challengeProgress: {},
+    collectedGems: [],
   };
 }
 
@@ -47,7 +50,17 @@ export interface GameEngineCallbacks {
   onAchievementUnlock: (achievementId: string) => void;
   onDamage: (amount: number) => void;
   onHeal: (amount: number) => void;
+  /** Optional: fires for every combat beat (hit, miss, player hit, victory, defeat, gem). */
+  onCombat?: (event: CombatEvent) => void;
 }
+
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+/** Damage a monster deals when the player enters a command that fails. Bosses hit harder. */
+export const MONSTER_DAMAGE = 8;
+export const BOSS_DAMAGE = 12;
+/** Health restored when a monster is defeated. */
+export const VICTORY_HEAL = 20;
 
 export class GameEngine {
   private progress: GameProgress;
@@ -58,6 +71,53 @@ export class GameEngine {
   private screen: GameScreen = 'menu';
   private callbacks: GameEngineCallbacks;
   private attemptedCommandForChallenge: Set<string> = new Set();
+  private defeated = false;
+  private combatSeq = 0;
+  private practice = false;
+  private shieldSpent = false;
+  private crystalUsed = false;
+  private hintStage: Record<string, number> = {};
+
+  private emitCombat(e: DistributiveOmit<CombatEvent, 'id'>): void {
+    this.callbacks.onCombat?.({ ...e, id: ++this.combatSeq } as CombatEvent);
+  }
+
+  isDefeated(): boolean {
+    return this.defeated;
+  }
+
+  /** Practice mode: wrong commands never cost health. Learn without pressure. */
+  setPractice(on: boolean): void {
+    this.practice = on;
+  }
+
+  isPractice(): boolean {
+    return this.practice;
+  }
+
+  /** Abilities depend on your current rank (they used to unlock only when the rank changed, so rank 1 got none). */
+  hasAbility(id: string): boolean {
+    const ability = ABILITIES.find((a) => a.id === id);
+    const rank = RANKS.find((r) => r.name === this.progress.rank);
+    return !!ability && !!rank && ability.unlockRank <= rank.level;
+  }
+
+  canUseRecoveryCrystal(): boolean {
+    return this.hasAbility('recovery_crystal') && !this.crystalUsed && !this.defeated && this.progress.health < this.progress.maxHealth;
+  }
+
+  /** Recovery Crystal: restore health to full, once per level run. */
+  useRecoveryCrystal(): void {
+    if (!this.canUseRecoveryCrystal()) return;
+    const healed = this.progress.maxHealth - this.progress.health;
+    this.progress.health = this.progress.maxHealth;
+    this.crystalUsed = true;
+    this.callbacks.onHeal(healed);
+    this.terminalHistory.push({ type: 'success', text: `💎 Recovery Crystal restored your health (+${healed} HP).` });
+    this.emitCombat({ type: 'heal', amount: healed });
+    this.callbacks.onTerminalOutput([...this.terminalHistory]);
+    this.notifyAll();
+  }
 
   constructor(callbacks: GameEngineCallbacks, existingProgress?: GameProgress | null) {
     this.callbacks = callbacks;
@@ -116,12 +176,15 @@ export class GameEngine {
     this.currentChallengeId = null;
     this.currentWorldId = 1;
     this.attemptedCommandForChallenge.clear();
+    this.crystalUsed = false;
     this.setScreen('worldMap');
     this.notifyAll();
   }
 
   loadProgress(progress: GameProgress): void {
     this.progress = progress;
+    this.defeated = false;
+    this.crystalUsed = false;
     this.currentWorldId = progress.currentWorldId;
     this.repoState = createInitialRepoState();
     this.terminalHistory = [];
@@ -132,6 +195,7 @@ export class GameEngine {
 
   enterWorld(worldId: number): void {
     if (!this.progress.unlockedWorlds.includes(worldId)) return;
+    if (this.currentWorldId !== worldId) this.crystalUsed = false;
     this.currentWorldId = worldId;
     const world = WORLDS.find((w) => w.id === worldId);
     if (!world || world.challenges.length === 0) return;
@@ -153,7 +217,12 @@ export class GameEngine {
     }
     if (!challenge) return;
 
+    if (this.defeated) {
+      this.defeated = false;
+      this.progress.health = this.progress.maxHealth;
+    }
     this.currentChallengeId = challengeId;
+    this.shieldSpent = false; // Commit Shield recharges for every fight
     this.attemptedCommandForChallenge.clear();
     if (challenge.setupState) {
       this.repoState = JSON.parse(JSON.stringify(challenge.setupState));
@@ -171,6 +240,7 @@ export class GameEngine {
       { type: 'system', text: '' },
     ];
     this.setScreen('game');
+    this.callbacks.onTerminalOutput([...this.terminalHistory]);
     this.notifyAll();
   }
 
@@ -197,7 +267,14 @@ export class GameEngine {
           return !prog?.objectivesCompleted.includes(o.id);
         });
         if (incomplete) {
+          const stage = (this.hintStage[incomplete.id] ?? 0) + 1;
+          this.hintStage[incomplete.id] = stage;
           this.terminalHistory.push({ type: 'info', text: `Hint: ${incomplete.hint}` });
+          if (stage >= 2) this.terminalHistory.push({ type: 'info', text: `📖 Remember: ${incomplete.concept}` });
+          const open = this.repoState.conflicts.filter((c) => !c.resolved);
+          if (open.length > 0 && this.hasAbility('conflict_sense')) {
+            this.terminalHistory.push({ type: 'info', text: `⚠ Conflict Sense: unresolved conflicts in ${open.map((c) => c.file).join(', ')}` });
+          }
           const chProgress = this.progress.challengeProgress[this.currentChallengeId!] || { hintsUsed: 0, objectivesCompleted: [] };
           chProgress.hintsUsed++;
           this.progress.challengeProgress[this.currentChallengeId!] = chProgress;
@@ -210,7 +287,23 @@ export class GameEngine {
       return;
     }
 
+    if (input.toLowerCase() === 'clear') {
+      this.terminalHistory = [];
+      this.callbacks.onTerminalOutput([]);
+      return;
+    }
+
+    if (this.defeated) {
+      this.terminalHistory.push({ type: 'error', text: 'You were defeated. Restart the level to keep fighting.' });
+      this.callbacks.onTerminalOutput([...this.terminalHistory]);
+      return;
+    }
+
     this.terminalHistory.push({ type: 'input', text: `$ ${input}` });
+
+    const challengeForCombat = this.findCurrentChallenge();
+    const challengeKey = this.currentChallengeId;
+    const doneBefore = challengeKey ? this.progress.challengeProgress[challengeKey]?.objectivesCompleted.length ?? 0 : 0;
 
     const { result, newState } = executeCommand(this.repoState, input);
     this.repoState = newState;
@@ -226,6 +319,11 @@ export class GameEngine {
       this.terminalHistory.push({ type: 'info', text: `💡 ${result.concept}` });
     }
 
+    if (!result.success) {
+      const why = explainFailure(input, result.output, this.repoState);
+      if (why) this.terminalHistory.push({ type: 'info', text: `🧭 ${why}` });
+    }
+
     this.callbacks.onTerminalOutput([...this.terminalHistory]);
 
     if (result.stateChange || result.success) {
@@ -237,6 +335,92 @@ export class GameEngine {
       this.attemptedCommandForChallenge.add(input);
     }
 
+    // Combat: a correct command that advances an objective hurts the monster; a failing command hurts you.
+    if (challengeForCombat && challengeKey) {
+      const total = challengeForCombat.objectives.length;
+      const doneAfter = this.progress.challengeProgress[challengeKey]?.objectivesCompleted.length ?? 0;
+      if (doneBefore < total) {
+        if (doneAfter > doneBefore) {
+          // 'hit' / 'defeated' events are emitted from checkObjectives
+        } else if (!result.success) {
+          this.hurtPlayer(challengeForCombat.isBoss ? BOSS_DAMAGE : MONSTER_DAMAGE);
+        } else {
+          this.terminalHistory.push({ type: 'info', text: 'That worked, but it did not hurt the monster. Check your objective (or type "hint").' });
+          this.callbacks.onTerminalOutput([...this.terminalHistory]);
+          this.emitCombat({ type: 'miss' });
+        }
+      }
+    }
+
+    this.notifyAll();
+  }
+
+  private hurtPlayer(amount: number): void {
+    if (this.practice) {
+      this.terminalHistory.push({ type: 'info', text: `🎓 Practice mode: that would have cost ${amount} HP. No damage taken.` });
+      this.emitCombat({ type: 'player-hit', damage: 0, health: this.progress.health });
+      this.callbacks.onTerminalOutput([...this.terminalHistory]);
+      return;
+    }
+    if (!this.shieldSpent && this.hasAbility('commit_shield')) {
+      this.shieldSpent = true;
+      this.terminalHistory.push({ type: 'success', text: '🛡️ Commit Shield absorbed the hit! (one per fight)' });
+      this.emitCombat({ type: 'shield' });
+      this.callbacks.onTerminalOutput([...this.terminalHistory]);
+      return;
+    }
+    this.progress.health = Math.max(0, this.progress.health - amount);
+    this.callbacks.onDamage(amount);
+    this.terminalHistory.push({ type: 'error', text: `💥 Wrong move! The monster strikes back: -${amount} HP` });
+    this.emitCombat({ type: 'player-hit', damage: amount, health: this.progress.health });
+    if (this.progress.health <= 0) {
+      this.defeated = true;
+      this.terminalHistory.push({ type: 'error', text: '💀 You were defeated. Restart the level to try again.' });
+      this.emitCombat({ type: 'player-down' });
+    }
+    this.callbacks.onTerminalOutput([...this.terminalHistory]);
+  }
+
+  /** Start the current world over: full health, monsters respawn, quest progress for the world is cleared. */
+  restartLevel(): void {
+    this.defeated = false;
+    this.crystalUsed = false;
+    this.progress.health = this.progress.maxHealth;
+    const secretChallenge = secretMissions.find((c) => c.id === this.currentChallengeId);
+    if (secretChallenge) {
+      delete this.progress.challengeProgress[secretChallenge.id];
+      this.emitCombat({ type: 'restart' });
+      this.startChallenge(secretChallenge.id);
+      this.terminalHistory.unshift({ type: 'success', text: '🔄 Mission restarted. Health restored. Good luck!' });
+      this.callbacks.onTerminalOutput([...this.terminalHistory]);
+      this.notifyAll();
+      return;
+    }
+    const world = WORLDS.find((w) => w.id === this.currentWorldId);
+    if (world && world.challenges.length > 0) {
+      for (const c of world.challenges) delete this.progress.challengeProgress[c.id];
+      this.emitCombat({ type: 'restart' });
+      this.startChallenge(world.challenges[0].id);
+    } else if (this.currentChallengeId) {
+      delete this.progress.challengeProgress[this.currentChallengeId];
+      this.emitCombat({ type: 'restart' });
+      this.startChallenge(this.currentChallengeId);
+    }
+    this.terminalHistory.unshift({ type: 'success', text: '🔄 Level restarted. Health restored. Good luck!' });
+    this.callbacks.onTerminalOutput([...this.terminalHistory]);
+    this.notifyAll();
+  }
+
+  /** Pick up a gem along the path (once per gem id). */
+  collectGem(id: string, xp = 5): void {
+    if (!this.progress.collectedGems) this.progress.collectedGems = [];
+    if (this.progress.collectedGems.includes(id)) return;
+    this.progress.collectedGems.push(id);
+    this.awardXp(xp);
+    this.updateRank();
+    this.terminalHistory.push({ type: 'success', text: `💎 Gem collected! +${xp} XP` });
+    this.callbacks.onTerminalOutput([...this.terminalHistory]);
+    this.emitCombat({ type: 'gem', xp });
     this.notifyAll();
   }
 
@@ -256,6 +440,7 @@ export class GameEngine {
     const chProgress = this.progress.challengeProgress[this.currentChallengeId] || { hintsUsed: 0, objectivesCompleted: [] };
     let newlyCompleted = 0;
     let totalXpThisCommand = 0;
+    const replay = this.progress.completedChallenges.some((c) => c.challengeId === challenge.id);
 
     for (const objective of challenge.objectives) {
       if (chProgress.objectivesCompleted.includes(objective.id)) continue;
@@ -263,8 +448,8 @@ export class GameEngine {
         if (objective.check(this.repoState, result)) {
           chProgress.objectivesCompleted.push(objective.id);
           newlyCompleted++;
-          totalXpThisCommand += objective.xpReward;
-          this.terminalHistory.push({ type: 'success', text: `✓ Objective complete: ${objective.description} (+${objective.xpReward} XP)` });
+          if (!replay) totalXpThisCommand += objective.xpReward;
+          this.terminalHistory.push({ type: 'success', text: `✓ Direct hit! Objective complete: ${objective.description} ${replay ? '(replay: no XP)' : `(+${objective.xpReward} XP)`}` });
         }
       } catch {
         // Objective check failed — skip
@@ -276,9 +461,23 @@ export class GameEngine {
       const noHints = chProgress.hintsUsed === 0;
       this.awardXp(totalXpThisCommand);
 
-      // Check if all objectives complete
-      if (chProgress.objectivesCompleted.length === challenge.objectives.length) {
+      const total = challenge.objectives.length;
+      const remaining = total - chProgress.objectivesCompleted.length;
+      this.emitCombat({ type: 'hit', remaining, total });
+
+      // Check if all objectives complete: the monster is defeated
+      if (remaining === 0) {
         this.completeChallenge(challenge.id, totalXpThisCommand, noHints);
+        const secret = SECRET_MISSIONS.find((m) => m.challengeId === challenge.id);
+        if (secret) this.completeSecretMission(secret.id);
+        const before = this.progress.health;
+        this.progress.health = Math.min(this.progress.maxHealth, this.progress.health + VICTORY_HEAL);
+        const healed = this.progress.health - before;
+        if (healed > 0) {
+          this.callbacks.onHeal(healed);
+          this.terminalHistory.push({ type: 'success', text: `❤️ Victory! You recover ${healed} HP.` });
+        }
+        this.emitCombat({ type: 'defeated', healed });
       }
     }
 
@@ -453,9 +652,11 @@ export class GameEngine {
   takeDamage(amount: number): void {
     this.progress.health = Math.max(0, this.progress.health - amount);
     this.callbacks.onDamage(amount);
-    if (this.progress.health <= 0) {
-      this.terminalHistory.push({ type: 'error', text: 'Your health has reached 0! Restoring to full.' });
-      this.progress.health = this.progress.maxHealth;
+    if (this.progress.health <= 0 && !this.defeated) {
+      this.defeated = true;
+      this.terminalHistory.push({ type: 'error', text: '💀 You were defeated. Restart the level to try again.' });
+      this.emitCombat({ type: 'player-down' });
+      this.callbacks.onTerminalOutput([...this.terminalHistory]);
     }
     this.notifyAll();
   }

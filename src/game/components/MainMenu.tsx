@@ -1,4 +1,5 @@
-import { Sword, Trophy, User, Play, ChevronRight } from 'lucide-react';
+import { Sword, Trophy, User, Play, ChevronRight, Crown } from 'lucide-react';
+import { AudioToggle } from './ui/AudioControls';
 import { useGame } from '../context/GameContext';
 import { Logo } from './ui/Logo';
 import { Backdrop } from './ui/Backdrop';
@@ -6,7 +7,7 @@ import { Backdrop } from './ui/Backdrop';
 export function MainMenu() {
   const {
     startNewGame, continueGame, setScreen, progress, authState, authUser, authError,
-    adapterMode, hasSavedGame, persistenceError, devSignIn,
+    adapterMode, hasSavedGame, persistenceError, devSignIn, signIn, canSignIn,
   } = useGame();
 
   const canPlay = authState === 'authenticated';
@@ -15,6 +16,7 @@ export function MainMenu() {
   return (
     <main className="relative min-h-screen overflow-hidden bg-kq-night text-kq-text">
       <Backdrop />
+      <div className="absolute right-3 top-3 z-20"><AudioToggle /></div>
 
       <div className="relative z-10 min-h-screen flex flex-col items-center justify-center gap-7 px-5 py-10">
         <div className="animate-fade-in-down">
@@ -24,12 +26,20 @@ export function MainMenu() {
         {/* Account status */}
         <div className="w-full max-w-sm animate-fade-in-up stagger-3" aria-live="polite">
           {authState === 'authenticated' ? (
-            <div className="kq-panel px-4 py-2.5 text-center text-sm text-kq-emerald">
-              Signed in as <strong className="text-kq-text">{authUser?.displayName}</strong>
-              {adapterMode === 'mock' && (
-                <span className="block text-xs text-kq-gold mt-0.5">
-                  MOCK sign-in (development only), not a Start.ng session
-                </span>
+            <div className="kq-panel flex items-center gap-3 px-4 py-2.5 text-left text-sm">
+              {authUser?.face && <img src={authUser.face} alt="" className="h-11 w-11 shrink-0 rounded-full border border-kq-edge bg-kq-deep" />}
+              <div className="min-w-0 flex-1">
+                <div className="truncate">
+                  {authUser?.isGuest ? 'Playing as ' : 'Signed in as '}
+                  <strong className="text-kq-text">{authUser?.displayName}</strong>
+                  {authUser?.account && <span className="text-kq-muted"> @{authUser.account}</span>}
+                </div>
+                {adapterMode === 'mock' && <div className="text-xs text-kq-gold">MOCK sign-in (development only), not a start.ng session</div>}
+                {authUser?.offline && <div className="text-xs text-kq-muted">Not connected to start.ng: playing offline. Scores are not shared.</div>}
+                {authUser?.isGuest && !authUser.offline && <div className="text-xs text-kq-muted">Guests can play, but only signed-in players are saved to the leaderboard.</div>}
+              </div>
+              {authUser?.isGuest && !authUser.offline && canSignIn && (
+                <button onClick={signIn} className="kq-btn kq-btn-gold shrink-0 !min-h-[40px] text-sm">Sign in</button>
               )}
             </div>
           ) : authState === 'unauthenticated' ? (
@@ -74,6 +84,10 @@ export function MainMenu() {
           >
             <span className="flex items-center gap-3"><Sword size={20} /> New Game</span>
             <ChevronRight size={18} />
+          </button>
+          <button onClick={() => setScreen('leaderboard')} className="kq-btn kq-btn-ghost justify-between">
+            <span className="flex items-center gap-3"><Crown size={20} className="text-kq-gold" /> Leaderboard</span>
+            <ChevronRight size={18} className="text-kq-muted" />
           </button>
           <button onClick={() => setScreen('achievements')} className="kq-btn kq-btn-ghost justify-between">
             <span className="flex items-center gap-3"><Trophy size={20} className="text-kq-gold" /> Achievements</span>

@@ -107,10 +107,9 @@ export function ShadowWraith({ reduced = false }: { reduced?: boolean }) {
 /* ------------------------------------------------------------ bosses */
 
 /** World 1: The Untracked Beast, a hulking brute. */
-export function UntrackedBeast({ reduced = false }: { reduced?: boolean }) {
+export function UntrackedBeast({ reduced = false, hide = '#5b6b3a', inner = '#7a8a52' }: { reduced?: boolean; hide?: string; inner?: string }) {
   const g = useRef<THREE.Group>(null);
   useIdle(g, reduced, 0.08, 1.3);
-  const hide = '#5b6b3a';
   return (
     <group ref={g}>
       {[-0.7, 0.7].map((x) => (
@@ -120,7 +119,7 @@ export function UntrackedBeast({ reduced = false }: { reduced?: boolean }) {
         </group>
       ))}
       <Sph a={[1.6, 14, 12]} p={[0, 2.8, 0]} s={[1.1, 1.1, 0.95]} c={hide} />
-      <Sph a={[1.1, 12, 10]} p={[0, 2.3, 0.7]} c="#7a8a52" />
+      <Sph a={[1.1, 12, 10]} p={[0, 2.3, 0.7]} c={inner} />
       <Sph a={[0.75, 12, 10]} p={[0, 4.35, 0.5]} s={[1.1, 1, 1]} c={hide} />
       <Box a={[0.9, 0.35, 0.5]} p={[0, 4.0, 1.1]} c="#2d2418" />
       {[-0.35, 0.35].map((x) => (
@@ -136,6 +135,32 @@ export function UntrackedBeast({ reduced = false }: { reduced?: boolean }) {
       {[0, 1, 2, 3].map((i) => (
         <Cn key={i} a={[0.14, 0.4, 5]} p={[-0.5 + i * 0.33, 4.2 - 0, -0.5]} c="#f1e6c8" r={[-0.6, 0, 0]} />
       ))}
+    </group>
+  );
+}
+
+/** Secret: The Ghost Commit, a tall spectral figure circled by lost commits. */
+export function GhostCommit({ reduced = false }: { reduced?: boolean }) {
+  const g = useRef<THREE.Group>(null);
+  const orbit = useRef<THREE.Group>(null);
+  useFrame((st, dt) => {
+    if (reduced) return;
+    if (g.current) g.current.position.y = 1.4 + Math.sin(st.clock.elapsedTime * 1.1) * 0.35;
+    if (orbit.current) orbit.current.rotation.y += dt * 0.9;
+  });
+  return (
+    <group ref={g} position={[0, 1.4, 0]}>
+      <Cn a={[1.6, 5.2, 10]} p={[0, 2.4, 0]} r={[Math.PI, 0, 0]} c="#b9d4ff" e="#6fa8ff" ei={0.5} opacity={0.62} rough={0.2} />
+      <Sph a={[0.75, 14, 12]} p={[0, 5.4, 0]} c="#dcebff" e="#9ec5ff" ei={0.7} opacity={0.75} />
+      <Sph a={[0.12, 8, 8]} p={[-0.28, 5.5, 0.62]} c="#08142a" shadow={false} />
+      <Sph a={[0.12, 8, 8]} p={[0.28, 5.5, 0.62]} c="#08142a" shadow={false} />
+      {[-1, 1].map((x) => <Cn key={x} a={[0.3, 2.6, 5]} p={[x * 1.7, 3, 0.4]} r={[0.3, 0, x * -1.1]} c="#b9d4ff" e="#6fa8ff" ei={0.4} opacity={0.5} />)}
+      <group ref={orbit} position={[0, 3.6, 0]}>
+        {[0, 1, 2, 3].map((i) => {
+          const a = (i / 4) * Math.PI * 2;
+          return <Sph key={i} a={[0.32, 10, 8]} p={[Math.cos(a) * 3, Math.sin(i) * 0.6, Math.sin(a) * 3]} c="#7df9ff" e="#52e0ff" ei={1.8} shadow={false} />;
+        })}
+      </group>
     </group>
   );
 }
@@ -420,9 +445,44 @@ export function TimelineKeeper({ reduced = false }: { reduced?: boolean }) {
   );
 }
 
+/** Secret map 1: the Ghost of Lost Commits, a pale spirit carrying a lantern. */
+export function Phantom({ reduced = false }: { reduced?: boolean }) {
+  const g = useRef<THREE.Group>(null);
+  useFrame((st) => {
+    if (!g.current || reduced) return;
+    const t = st.clock.elapsedTime;
+    g.current.position.y = 1.2 + Math.sin(t * 1.1) * 0.4;
+    g.current.rotation.y = Math.sin(t * 0.5) * 0.18;
+  });
+  return (
+    <group ref={g} position={[0, 1.2, 0]}>
+      <Cn a={[1.7, 5, 14]} p={[0, 2.5, 0]} c="#d4ecff" e="#7ccfff" ei={0.35} opacity={0.55} />
+      {Array.from({ length: 7 }, (_, i) => {
+        const a = (i / 7) * Math.PI * 2;
+        return <Cn key={i} a={[0.35, 1.2, 4]} p={[Math.cos(a) * 1.35, -0.1, Math.sin(a) * 1.35]} r={[Math.PI, 0, 0]} c="#d4ecff" opacity={0.5} shadow={false} />;
+      })}
+      <Sph a={[0.7, 14, 12]} p={[0, 5.3, 0]} c="#0b1626" />
+      <Cn a={[0.85, 1.3, 10]} p={[0, 6.0, -0.1]} c="#cfe6fb" opacity={0.7} />
+      <Sph a={[0.12, 8, 8]} p={[-0.25, 5.35, 0.62]} c="#e0fbff" e="#52e0ff" ei={3} shadow={false} />
+      <Sph a={[0.12, 8, 8]} p={[0.25, 5.35, 0.62]} c="#e0fbff" e="#52e0ff" ei={3} shadow={false} />
+      {[-1, 1].map((s) => <Cn key={s} a={[0.28, 2.6, 5]} p={[s * 1.4, 3.6, 1]} r={[1.2, 0, s * -0.5]} c="#d4ecff" opacity={0.6} shadow={false} />)}
+      <Sph a={[0.38, 10, 8]} p={[1.9, 3.0, 2.0]} c="#baf3ff" e="#52e0ff" ei={3} shadow={false} />
+      <Torus a={[1.6, 0.07, 6, 28]} p={[0, 3.2, 0]} r={[Math.PI / 2, 0.2, 0]} c="#9aa7b8" metal={0.7} shadow={false} />
+      <Torus a={[2.1, 0.07, 6, 28]} p={[0, 2.2, 0]} r={[Math.PI / 2, -0.15, 0]} c="#9aa7b8" metal={0.7} shadow={false} />
+    </group>
+  );
+}
+
 /** Pick the boss model for a world's boss name (substring match so renamed variants still resolve). */
 export function Boss({ name, reduced = false }: { name?: string; reduced?: boolean }) {
   const n = (name ?? '').toLowerCase();
+  if (n.includes('ghost')) return <GhostCommit reduced={reduced} />;
+  if (n.includes('silent')) return <Gatekeeper reduced={reduced} />;
+  if (n.includes('crasher')) return <UntrackedBeast reduced={reduced} hide="#7a3b3b" inner="#a35a4a" />;
+  if (n.includes('ghost')) return <Phantom reduced={reduced} />;
+  if (n.includes('sentinel')) return <Gatekeeper reduced={reduced} />;
+  if (n.includes('ogre')) return <UntrackedBeast reduced={reduced} />;
+  if (n.includes('chrono')) return <TimelineKeeper reduced={reduced} />;
   if (n.includes('untracked')) return <UntrackedBeast reduced={reduced} />;
   if (n.includes('history')) return <HistoryEater reduced={reduced} />;
   if (n.includes('guardian')) return <BranchGuardian reduced={reduced} />;

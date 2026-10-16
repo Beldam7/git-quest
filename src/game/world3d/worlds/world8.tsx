@@ -1,15 +1,19 @@
 import { Box, Bridge, Cn, Cyl, Fx, Glow, Rocks, Scatter, Tower, Water, scatter, useSmooth } from '../kit';
 import { fbm, flatten, smoothstep } from '../noise';
 import type { Circle, SceneProps, WorldDef } from '../types';
+import { distToPath, roadProfile, smoothPath } from '../path';
 
 /** WORLD 8: THE DRAGON'S CITADEL. An obsidian fortress above lava; its towers ignite as quests are completed. */
 
+const PATH_PTS = smoothPath([[0, 24], [-9, 20], [9, 18], [0, 14], [0, 10], [0, 6], [0, 2], [0, -2]]);
+const ROAD = roadProfile(PATH_PTS, 2.0, 26, 7);
 const riverZ = (x: number) => 8 + Math.sin(x * 0.08) * 3;
 const onBridgeStrip = (x: number, z: number) => Math.abs(x) < 1.7 && Math.abs(z - riverZ(x)) < 6;
 
 const heightAt = (x: number, z: number): number => {
   const r = Math.hypot(x, z);
   let y = (fbm(x * 0.06 + 11, z * 0.06 + 5) - 0.45) * 5;
+  y += ROAD(x, z) * smoothstep(6, 11, Math.abs(z - riverZ(x)));
   y -= 3.6 * Math.exp(-((z - riverZ(x)) ** 2) / (2 * 3 * 3));
   y -= 3 * Math.exp(-((x + 22 + Math.sin(z * 0.1) * 4) ** 2) / (2 * 2.4 * 2.4)) * smoothstep(20, 0, z);
   y = flatten(y, x, z, 0, 22, 6, 12, 0.7);
@@ -19,8 +23,8 @@ const heightAt = (x: number, z: number): number => {
 };
 
 const LAVA_Y = -1.2;
-const ROCKS = scatter(81, 40, { rMax: 40, h: heightAt, sMin: 0.7, sMax: 2, reject: (x, z, y) => y < -0.4 || Math.abs(x) < 4 || Math.hypot(x, z + 10) < 14 || z < -22 });
-const SPIKES = scatter(82, 30, { rMin: 14, rMax: 44, h: heightAt, sMin: 1, sMax: 2.6, reject: (x, z, y) => y < -0.4 || Math.hypot(x, z + 10) < 14 });
+const ROCKS = scatter(81, 40, { rMax: 40, h: heightAt, sMin: 0.7, sMax: 2, reject: (x, z, y) => y < -0.4 || Math.abs(x) < 4 || Math.hypot(x, z + 10) < 14 || z < -22 || distToPath(PATH_PTS, x, z) < 3 });
+const SPIKES = scatter(82, 30, { rMin: 14, rMax: 44, h: heightAt, sMin: 1, sMax: 2.6, reject: (x, z, y) => y < -0.4 || Math.hypot(x, z + 10) < 14 || distToPath(PATH_PTS, x, z) < 3 });
 
 const obstacles: Circle[] = [
   [-26, -26, 4.4], [26, -26, 4.4], [-26, -48, 4.4], [26, -48, 4.4], [0, -42, 11], [0, -26.5, 3.4],
@@ -113,8 +117,9 @@ export const WORLD8: WorldDef = {
     hemiSky: '#ff9a6a', hemiGround: '#2a0f10', hemiIntensity: 0.7, sun: '#ff8a4a', sunIntensity: 1.1, sunPosition: [-24, 22, 30],
   },
   terrain: { size: 170, segments: 130, palette: { low: '#1f1a25', mid: '#2c2630', high: '#463d52', cliff: '#150f1a', lowY: -3, highY: 14, cliffSlope: 0.26 } },
-  radius: 38, spawn: [0, 24], heightAt, obstacles,
+  radius: 38, spawn: PATH_PTS[0], path: PATH_PTS, heightAt, obstacles,
+  bridges: [{ a: [0, 16], b: [0, 0], y: 0.7, width: 3 }],
   groundAt: (x, z) => (onBridgeStrip(x, z) ? 0.7 : heightAt(x, z)),
   walkable: (x, z) => heightAt(x, z) > -0.8 || onBridgeStrip(x, z),
-  boss: { position: [0, -8], facing: 0 }, Scene,
+  boss: { position: [0, -14], facing: 0 }, Scene,
 };

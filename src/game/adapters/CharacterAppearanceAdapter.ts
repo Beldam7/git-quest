@@ -1,43 +1,66 @@
+import type { StartNgStyle } from '../platform/startng';
+
+/**
+ * The player's character, in start.ng's own schema (VERIFIED against the platform docs, "Character style fields").
+ * start.ng may add more options later, so every unknown or missing value falls back to something sensible.
+ *
+ * How the hero uses it (see hero/HeroModel.tsx): primaryColor = tunic/top and cloak, secondaryColor = trousers,
+ * skinColor, hairColor, hair style, hat, accessory and body shape are all drawn on the 3D character.
+ */
+export type Body = 'female' | 'male';
+export type Hair = 'short' | 'afro' | 'braids' | 'bun' | 'ponytail' | 'dreads' | 'bald';
+export type Hat = 'none' | 'cap' | 'beanie' | 'tophat' | 'crown';
+export type Accessory = 'none' | 'glasses' | 'earrings' | 'beard' | 'scarf' | 'backpack';
+
 export interface CharacterAppearance {
+  body: Body;
   primaryColor: string;
   secondaryColor: string;
-  accentColor: string;
-  accessory: CharacterAccessory;
-  materialVariant: CharacterMaterial;
+  skinColor: string;
+  hairColor: string;
+  hair: Hair;
+  hat: Hat;
+  accessory: Accessory;
 }
 
-export type CharacterAccessory = 'none' | 'cape' | 'helmet' | 'wizard_hat' | 'dragon_armor';
-export type CharacterMaterial = 'standard' | 'metallic' | 'crystal' | 'phoenix';
+export const BODY_OPTIONS: readonly Body[] = ['female', 'male'];
+export const HAIR_OPTIONS: readonly Hair[] = ['short', 'afro', 'braids', 'bun', 'ponytail', 'dreads', 'bald'];
+export const HAT_OPTIONS: readonly Hat[] = ['none', 'cap', 'beanie', 'tophat', 'crown'];
+export const ACCESSORY_OPTIONS: readonly Accessory[] = ['none', 'glasses', 'earrings', 'beard', 'scarf', 'backpack'];
 
 export const DEFAULT_APPEARANCE: CharacterAppearance = {
+  body: 'male',
   primaryColor: '#3b82f6',
-  secondaryColor: '#1e40af',
-  accentColor: '#fbbf24',
+  secondaryColor: '#4b3a2c',
+  skinColor: '#b97a56',
+  hairColor: '#24160e',
+  hair: 'short',
+  hat: 'none',
   accessory: 'none',
-  materialVariant: 'standard',
 };
-
-export const ACCESSORY_OPTIONS: CharacterAccessory[] = ['none', 'cape', 'helmet', 'wizard_hat', 'dragon_armor'];
-export const MATERIAL_OPTIONS: CharacterMaterial[] = ['standard', 'metallic', 'crystal', 'phoenix'];
 
 const VALID_COLORS = /^#[0-9a-fA-F]{6}$/;
 
 function sanitizeColor(value: unknown, fallback: string): string {
-  if (typeof value === 'string' && VALID_COLORS.test(value)) return value;
-  return fallback;
+  return typeof value === 'string' && VALID_COLORS.test(value) ? value : fallback;
 }
 
 function sanitizeEnum<T extends string>(value: unknown, options: readonly T[], fallback: T): T {
   return options.includes(value as T) ? (value as T) : fallback;
 }
 
-export function sanitizeAppearance(input: Partial<CharacterAppearance> | null | undefined): CharacterAppearance {
+/** Accepts anything (including a raw start.ng style object) and always returns a complete, valid appearance. */
+export function sanitizeAppearance(input: Partial<Record<keyof CharacterAppearance, unknown>> | StartNgStyle | null | undefined): CharacterAppearance {
+  const i = (input ?? {}) as Partial<Record<keyof CharacterAppearance, unknown>>;
   return {
-    primaryColor: sanitizeColor(input?.primaryColor, DEFAULT_APPEARANCE.primaryColor),
-    secondaryColor: sanitizeColor(input?.secondaryColor, DEFAULT_APPEARANCE.secondaryColor),
-    accentColor: sanitizeColor(input?.accentColor, DEFAULT_APPEARANCE.accentColor),
-    accessory: sanitizeEnum(input?.accessory, ACCESSORY_OPTIONS, DEFAULT_APPEARANCE.accessory),
-    materialVariant: sanitizeEnum(input?.materialVariant, MATERIAL_OPTIONS, DEFAULT_APPEARANCE.materialVariant),
+    body: sanitizeEnum(i.body, BODY_OPTIONS, DEFAULT_APPEARANCE.body),
+    primaryColor: sanitizeColor(i.primaryColor, DEFAULT_APPEARANCE.primaryColor),
+    secondaryColor: sanitizeColor(i.secondaryColor, DEFAULT_APPEARANCE.secondaryColor),
+    skinColor: sanitizeColor(i.skinColor, DEFAULT_APPEARANCE.skinColor),
+    hairColor: sanitizeColor(i.hairColor, DEFAULT_APPEARANCE.hairColor),
+    hair: sanitizeEnum(i.hair, HAIR_OPTIONS, DEFAULT_APPEARANCE.hair),
+    hat: sanitizeEnum(i.hat, HAT_OPTIONS, DEFAULT_APPEARANCE.hat),
+    accessory: sanitizeEnum(i.accessory, ACCESSORY_OPTIONS, DEFAULT_APPEARANCE.accessory),
   };
 }
 
@@ -47,13 +70,11 @@ export interface CharacterAppearanceAdapter {
   onChange(callback: (appearance: CharacterAppearance) => void): () => void;
 }
 
+/** DEVELOPMENT-ONLY editor: lets you design a character locally. In production start.ng owns the character. */
 export class LocalCharacterAppearanceAdapter implements CharacterAppearanceAdapter {
   private appearance: CharacterAppearance;
   private listeners: Set<(a: CharacterAppearance) => void> = new Set();
-
-  // DEVELOPMENT-ONLY. Persists a local preview so it survives reloads. This is NOT
-  // Start.ng's centralized styling and must not ship as the production source.
-  private static STORAGE_KEY = 'gitquest:dev-appearance';
+  private static STORAGE_KEY = 'gitquest:dev-appearance-v2';
 
   constructor(initial?: Partial<CharacterAppearance>) {
     let stored: Partial<CharacterAppearance> | undefined;
@@ -76,7 +97,7 @@ export class LocalCharacterAppearanceAdapter implements CharacterAppearanceAdapt
     try {
       localStorage.setItem(LocalCharacterAppearanceAdapter.STORAGE_KEY, JSON.stringify(sanitized));
     } catch {
-      // Storage unavailable: preview still works for this session.
+      /* storage unavailable: the preview still works for this session */
     }
     this.listeners.forEach((cb) => cb(sanitized));
   }
@@ -87,48 +108,34 @@ export class LocalCharacterAppearanceAdapter implements CharacterAppearanceAdapt
   }
 }
 
+/**
+ * Production: the player's character comes from start.ng (`user.style`, or the platform's guest look).
+ * The game never edits it. Re-read when the player returns to the tab (they may have changed it on start.ng).
+ * Pushed in by StartNgAuthAdapter, which already asks `startng:whoami`.
+ */
 export class StartNgCharacterAppearanceAdapter implements CharacterAppearanceAdapter {
   private appearance: CharacterAppearance = DEFAULT_APPEARANCE;
   private listeners: Set<(a: CharacterAppearance) => void> = new Set();
 
-  // TODO: START_NG_INTEGRATION — The actual platform styling contract is not yet verified.
-  // This adapter must receive appearance data from Start.ng's centralized character styling
-  // mechanism. The following are UNKNOWN and must be filled in from official documentation:
-  // - UNVERIFIED: The source of centralized styling data (SDK, API, embedded config, postMessage, etc.)
-  // - UNVERIFIED: The schema of the styling object Start.ng provides
-  // - UNVERIFIED: Whether change notifications are push-based (events) or pull-based (polling)
-  // - UNVERIFIED: Which properties map to color, accessory, and material in our model
-  // - UNVERIFIED: Whether appearance is per-user or global
-  // - UNVERIFIED: How to subscribe to styling change events from the platform
-
   getAppearance(): CharacterAppearance {
-    // TODO: Replace with actual platform-provided appearance data.
-    // Currently returns safe defaults.
     return { ...this.appearance };
   }
 
-  setAppearance(_partial: Partial<CharacterAppearance>): void {
-    // TODO: In production, appearance should NOT be settable from the game.
-    // It should be driven by Start.ng's centralized styling. This method
-    // may be removed or repurposed once the platform contract is verified.
-    throw new Error(
-      'StartNgCharacterAppearanceAdapter.setAppearance is not available until ' +
-        'the Start.ng styling contract is verified. Use LocalCharacterAppearanceAdapter for development.'
-    );
+  /** Called by the platform layer whenever start.ng reports the player's style. */
+  applyStyle(style: StartNgStyle | null | undefined): void {
+    const next = sanitizeAppearance(style);
+    if (JSON.stringify(next) === JSON.stringify(this.appearance)) return;
+    this.appearance = next;
+    this.listeners.forEach((cb) => cb({ ...next }));
+  }
+
+  setAppearance(): void {
+    // The character is owned by start.ng; the game cannot change it.
   }
 
   onChange(callback: (a: CharacterAppearance) => void): () => void {
-    // TODO: Subscribe to the platform's styling change notification mechanism.
-    // Currently a no-op since no platform event source exists.
     this.listeners.add(callback);
     return () => this.listeners.delete(callback);
   }
-
-  // TODO: Implement a method like `connectPlatformStyleSource()` once the
-  // platform mechanism is known. It should:
-  // 1. Fetch the current authenticated user's centralized styling
-  // 2. Map platform properties to CharacterAppearance fields
-  // 3. Subscribe to change events
-  // 4. Validate all incoming values via sanitizeAppearance()
-  // 5. Notify all registered listeners
 }
+

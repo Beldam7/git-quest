@@ -3,18 +3,23 @@ import { Box, Bridge, Cn, Cyl, Fx, Glow, Island, Scatter, Tower, Trees, Wall, Ba
 import type { V3 } from '../kit';
 import { fbm, smoothstep } from '../noise';
 import type { Circle, SceneProps, WorldDef } from '../types';
+import { distToPath, roadProfile, smoothPath } from '../path';
 
 /** WORLD 5: THE REMOTE KINGDOM. A floating home island linked to distant kingdoms by a portal, beacons and bridges. */
+
+const PATH_PTS = smoothPath([[0, 22], [-8, 14], [0, 6], [8, -2], [0, -8]]);
+const ROAD = roadProfile(PATH_PTS, 1.6, 22, 6);
 
 const heightAt = (x: number, z: number): number => {
   const r = Math.hypot(x, z);
   let y = 2.6 + (fbm(x * 0.07 + 4, z * 0.07 + 1) - 0.5) * 2 + 2.2 * (1 - Math.min(1, (r / 34) ** 2));
+  y += ROAD(x, z);
   y -= smoothstep(27, 35, r) * 70;
   return y;
 };
 
 const HOUSES: Array<[number, number, number]> = [[-17, 9, 0.5], [-20, -2, 0.2], [17, 10, -0.5], [20, 0, -0.2], [-12, 18, 0.8], [13, 19, -0.8]];
-const TREES = scatter(51, 26, { rMin: 8, rMax: 25, h: heightAt, sMin: 0.8, sMax: 1.3, reject: (x, z) => Math.hypot(x, z) < 12 || HOUSES.some(([hx, hz]) => Math.hypot(x - hx, z - hz) < 5) || z < -12 });
+const TREES = scatter(51, 26, { rMin: 8, rMax: 25, h: heightAt, sMin: 0.8, sMax: 1.3, reject: (x, z) => Math.hypot(x, z) < 12 || HOUSES.some(([hx, hz]) => Math.hypot(x - hx, z - hz) < 5) || z < -12 || distToPath(PATH_PTS, x, z) < 3 });
 const CLOUDS = scatter(52, 36, { rMin: 38, rMax: 130, h: () => 0, sMin: 3, sMax: 8 }).map((c, i) => ({ ...c, y: -14 + (i % 9) * 3, sy: 0.45 }));
 
 const obstacles: Circle[] = [
@@ -130,6 +135,6 @@ export const WORLD5: WorldDef = {
     hemiSky: '#e8f4ff', hemiGround: '#5a7a58', hemiIntensity: 1.0, sun: '#fff4d6', sunIntensity: 1.6, sunPosition: [26, 44, 20],
   },
   terrain: { size: 170, segments: 130, palette: { low: '#8b7e66', mid: '#5fbf7a', high: '#8fd18a', cliff: '#9a8d74', lowY: -4, highY: 4.5, cliffSlope: 0.28 } },
-  radius: 27, spawn: [0, 22], heightAt, obstacles,
+  radius: 27, spawn: PATH_PTS[0], path: PATH_PTS, heightAt, obstacles,
   boss: { position: [0, -17], facing: 0 }, Scene,
 };

@@ -47,8 +47,8 @@ src/
 │   │   ├── ranks.ts                 # Ranks, abilities, achievements, collectibles
 │   │   └── secretMissions.ts        # Secret mission definitions
 │   ├── adapters/
-│   │   ├── AuthAdapter.ts           # Auth interface + Mock + StartNg placeholder
-│   │   ├── ProgressAdapter.ts       # Progress interface + Local + StartNg placeholder
+│   │   ├── AuthAdapter.ts           # Auth interface + dev Mock + real start.ng auth (connect page)
+│   │   ├── ProgressAdapter.ts       # Progress saved in the browser, per player (start.ng has no cloud save)
 │   │   └── CharacterAppearanceAdapter.ts  # Appearance interface + adapters
 │   ├── components/
 │   │   ├── MainMenu.tsx             # Main menu screen
@@ -151,26 +151,26 @@ The character's 3D appearance is driven by the `CharacterAppearanceAdapter`:
 - Primary/secondary/accent colors map to Three.js material colors
 - Accessories (cape, helmet, wizard hat, dragon armor) add 3D geometry
 - Material variants (standard, metallic, crystal, phoenix) change material properties
-- The `StartNgCharacterAppearanceAdapter` placeholder will translate platform styling to this model
+- `StartNgCharacterAppearanceAdapter` maps the player's start.ng character (`body`, colours, `hair`, `hat`, `accessory`) onto this model
 
 ## Adapter Pattern
 
-Three adapter interfaces isolate Start.ng platform integration:
+Adapter interfaces isolate the start.ng platform integration (see `docs/START_NG_INTEGRATION.md`):
 
 ### AuthAdapter
 - `getState()`, `getUser()`, `onChange()`, `signOut()`
 - `MockAuthAdapter` — development-only mock
-- `StartNgAuthAdapter` — placeholder with TODO comments
+- `StartNgAuthAdapter` — real: asks start.ng's connect page who is playing (user, guest, or offline guest)
 
 ### ProgressAdapter
 - `load(userId)`, `save(userId, progress)`, `clear(userId)`
 - `LocalProgressAdapter` — localStorage-based persistence
-- `StartNgProgressAdapter` — placeholder with TODO comments
+- (no start.ng progress adapter: progress is saved in the browser by `LocalProgressAdapter`)
 
 ### CharacterAppearanceAdapter
 - `getAppearance()`, `setAppearance()`, `onChange()`
 - `LocalCharacterAppearanceAdapter` — development customization
-- `StartNgCharacterAppearanceAdapter` — placeholder with TODO comments
+- `StartNgCharacterAppearanceAdapter` — real: shows the start.ng character; the game cannot edit it
 
 ## State Management
 

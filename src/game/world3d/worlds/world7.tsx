@@ -4,9 +4,12 @@ import type * as THREE from 'three';
 import { Html } from '@react-three/drei';
 import { Box, Cn, Cyl, Fx, Glow, Scatter, Sph, Torus, scatter, useSmooth } from '../kit';
 import { smoothstep } from '../noise';
+import { smoothPath } from '../path';
 import type { Circle, SceneProps, WorldDef } from '../types';
 
 /** WORLD 7: THE TIME-REVERSAL TEMPLE. Commits are nodes on a floor timeline; a vault, relic and clocks reflect stash and reflog state. */
+
+const PATH_PTS = smoothPath([[0, 26], [-10, 18], [10, 8], [-6, 0], [0, -2]]);
 
 const heightAt = (x: number, z: number): number => {
   const r = Math.hypot(x, z);
@@ -168,6 +171,6 @@ export const WORLD7: WorldDef = {
     hemiSky: '#8a9bff', hemiGround: '#2a2f5c', hemiIntensity: 0.75, sun: '#b9c7ff', sunIntensity: 0.9, sunPosition: [-20, 40, 26], stars: 1200,
   },
   terrain: { size: 170, segments: 100, palette: { low: '#232850', mid: '#3b4268', high: '#59608a', cliff: '#1c2040', lowY: -10, highY: 2, cliffSlope: 0.4 } },
-  radius: 30, spawn: [0, 26], heightAt, obstacles,
+  radius: 30, spawn: PATH_PTS[0], path: PATH_PTS, heightAt, obstacles,
   boss: { position: [0, -8], facing: 0 }, Scene,
 };

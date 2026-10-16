@@ -45,6 +45,7 @@ export function TouchStick({ vector, className = 'absolute bottom-6 left-6' }: {
       }}
       onPointerUp={end}
       onPointerCancel={end}
+      onLostPointerCapture={end}
     >
       <div
         className="absolute left-1/2 top-1/2 h-14 w-14 rounded-full border border-kq-cyan/70 bg-kq-cyan/25"

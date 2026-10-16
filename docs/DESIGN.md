@@ -164,3 +164,162 @@ WASD / arrows move the hero. Movement is ignored while a text field has focus. C
 - [ ] Terminal focus: typing `wasd` into the terminal does not move the hero
 - [ ] Resize terminal by dragging and with arrow keys; collapse/expand; canvas resizes
 - [ ] Touch emulation: joystick moves hero, UI usable at 375px width
+
+---
+
+# 9. Pass 3: the game loop (path, monsters, combat, gems, zoom)
+
+**Status: written, not compiled or run.** New engine tests (`gameEngine.test.ts`, "Combat, defeat, restart and gems") and `world3d.test.ts` cover the rules below, but have not been executed.
+
+## 9.1 How it plays
+
+1. Each world is a **path** from the spawn point to the boss (`path` in every `world3d/worlds/worldN.tsx`). The route is lit: cleared stretch green, the stretch to the next monster bright cyan, the rest dim.
+2. **One monster per question.** Every quest in the world gets a monster standing on the path (goblin, slime, skeleton, shadow in rotation); the last quest is the **boss**, waiting at the end of the world. Boss models: see section 8.3.
+3. **Walk to it** (WASD / arrows / touch stick) or press **Walk to monster** (auto-walk follows the path and stops at the edge of the battle zone). A ring on the ground shows the battle zone; a beam and arrow mark the next target.
+4. Inside the zone the **fight starts**: the coach says "Fight! Type the right Git command" and shows the exact objective; the terminal gets keyboard focus.
+5. **Correct command** (it completes a quest objective) = a hit on the monster. Each objective is one heart, so a 3-objective quest is a 3-heart monster. Last heart = **defeated**, XP awarded, +20 HP, and the hero strides on to the next monster.
+6. **Wrong command** (the simulator reports a failure, e.g. a typo or `git add` before `git init`) = the monster strikes back: **-8 HP** (**-12** from a boss), with a red flash and camera shake. `help`, `hint` and `clear` are free. A command that works but is not the objective ("That worked, but it did not hurt the monster") costs nothing.
+7. **Health 0 = defeat.** A dialog offers **Restart level**: full health, the world's quests reset, monsters respawn, the hero returns to the start. XP, gems and unlocked worlds are kept, but replaying a quest you already finished awards **no XP** (no farming).
+8. **Gems** lie along the route (3 per leg). Walking through one gives +5 XP once. The HUD shows gems collected per world.
+9. **Zoom**: mouse wheel, +/- keys, on-screen buttons, or pinch on touch (range 0.45x to 2.8x).
+10. Commands only count at the monster. Typing anything other than `help`/`hint`/`clear` while away from it shows "Walk up to the monster first". (Secret missions are exempt.)
+
+## 9.2 Learning the game from the first screen
+
+A **How to play** card (4 steps, plain language) opens on the first visit and can be reopened with the ? button or the pause menu. A **coach bar** on the world always states the single next action: walk to the monster, or exactly which Git command objective to complete. The terminal placeholder changes with the situation. Toasts confirm every beat (direct hit, wrong command, gem, victory).
+
+## 9.3 Engine changes (`GameEngine.ts`)
+
+`onCombat` callback (optional) with events `hit | miss | player-hit | defeated | player-down | restart | gem`; `restartLevel()`, `collectGem()`, `isDefeated()`; `takeDamage` no longer silently restores health; defeated state blocks commands until restart; `clear` is handled; the challenge intro text now actually reaches the terminal (it previously only appeared after the first command). Damage: `MONSTER_DAMAGE = 8`, `BOSS_DAMAGE = 12`, `VICTORY_HEAL = 20` (exported constants, easy to tune).
+
+## 9.4 Known limitations of this pass
+
+- "Incorrect" means a command the simulator rejects. A valid Git command that is simply the wrong one for the question costs no health; it only prints the "did not hurt" hint. Making that harsher is a design choice (change the `else` branch in `processCommand`).
+- Monsters are procedural models and do not attack visually beyond a lunge; there are no hit-point numbers beyond hearts.
+- World 4's boss fights across the ravine from the south bank by design, so a broken bridge can never trap you.
+- Auto-walk assumes the authored path is clear. Collision circles for scenery are generated from the same random placement as the visuals, and have not been playtested.
+- Nothing has been run in a browser: expect tuning of spacing, battle-zone radii, camera distance and damage values.
+
+
+## 9.5 Pass 4: movement fixes, road barrier, winding hilly routes
+
+- **Stuck movement fixed.** A key held while a fight pulled focus into the terminal never registered its release (releases were ignored while a text field had focus), so the hero kept walking and a stuck W cancelled S. Releases are now always honoured, focus moving into a text field drops all held keys, and keys are also dropped on window blur, tab hide, pause/dialogs and when the touch stick loses its pointer.
+- **No uncommanded walking.** Auto-walk now starts only when the player presses **Walk to monster**, cancels on any key or stick input, on starting a fight, and when there is no living monster to walk to. It no longer starts by itself after the tutorial or a victory.
+- **Monsters block the road.** The hero is confined to a corridor around the route (`ROAD_CORRIDOR`, 6 units each side) and cannot pass the arc position of the first living monster (`constrainToRoad`). A shimmering gate marks the barrier; bumping into it shows "A monster blocks the road!". It opens only when that monster is defeated. Going around is impossible because the corridor edge pulls the hero back onto the road.
+- **Curved, hilly routes.** Every route is a Catmull-Rom spline through winding control points (`smoothPath`), and terrain gets rolling hills along the route (`roadProfile`, always raising the ground so water and lava thresholds are not breached). World 6 (a flat paved courtyard) and World 7 (a temple floor) keep a flat floor by design but have winding routes. Worlds 1 and 8 keep a straight stretch where the route crosses a bridge, so the hero stays on the deck.
+- Tests: `world3d.test.ts` covers the spline, the hills and the barrier/corridor rules.
+
+Still unverified in a browser: hill amplitudes, corridor width and barrier placement per world.
+
+
+---
+
+# 10. Pass 5: visible combat, sound, leaderboard, secret maps
+
+**Status: written, not compiled or run.** New tests: `audio.test.ts`, `leaderboard.test.ts`, additions to `world3d.test.ts` and `gameEngine.test.ts`. None executed yet.
+
+## 10.1 Combat you can actually see (and why it was invisible)
+
+Root cause: the engine emits `hit` then `defeated` in the same instant for a killing blow, and the UI stored only the latest event, so the hit effects, hit sound and hit toast were lost. The context now keeps an ordered list of events (`combatEvents`) and every consumer processes each event exactly once (`useCombatEvents`).
+
+| Moment | What you see |
+|---|---|
+| Correct command | Hero draws a sword and swings (wind-up, slash arc, lunge). A glowing bolt flies to the monster, bursts on impact, "HIT!" floats up; the monster is knocked back and shakes |
+| Killing blow | Green burst, "DEFEATED!", the monster collapses; victory fanfare and heal |
+| Wrong command | The monster lunges, a red bolt flies to the hero, burst + "-8 HP", the hero staggers back, the screen flashes red and the camera shakes |
+| Valid but not the objective | "No effect…" floats over the monster, which shrugs |
+| Gem | Cyan burst and "+5 XP" over the hero |
+
+Bolts are pure emissive meshes (no dynamic lights, which would force shader recompiles). With reduced-motion on, particle bursts and bolts are skipped but the text and animations that carry meaning remain.
+
+## 10.2 Sound (`src/game/audio/GameAudio.ts`)
+
+No audio files: everything is synthesised with the Web Audio API, so there is nothing to license or download.
+- **Music:** a generative ambient score (pads, plucks, bass) with its own key, scale and tempo per map (menu, worlds 1-8, four secret maps), crossfaded on map change. A battle mood adds drums and a faster pulse while you are inside a monster's battle zone.
+- **Effects:** hit, miss, hurt, XP, gem, victory, level-up, defeat, battle horn, blocked, button click, footsteps, restart.
+- **Controls:** speaker button in the header and menu; music/effects sliders in the pause menu; settings persist per device. Sound starts only after your first click or key (browser rule).
+- Limitation: it is synthesised, not recorded or composed. If you want real tracks, add files and replace `GameAudio`'s music scheduler; the call sites (`setTheme`, `setMood`, `playSfx`) will not change.
+
+## 10.3 Leaderboard
+
+`LeaderboardAdapter` follows the same pattern as auth/progress/styling.
+- **Dev mock (`LocalLeaderboardAdapter`):** stores your best score in this browser plus six clearly labelled DEMO players. It is not shared between players and can be edited by anyone in DevTools.
+- **Production placeholder (`StartNgLeaderboardAdapter`):** throws "not configured". No endpoint is invented. A real leaderboard must be server-authoritative: the server should compute or validate XP from verified progress, because anything the browser submits can be forged.
+- Scores are submitted after each successful save; ranking is XP, then worlds cleared, then who arrived first. Entries are sanitised (name length/characters, clamped numbers). A restart never lowers your best score.
+- Screen: Main menu > Leaderboard.
+
+## 10.4 Secret-mission maps
+
+Each of the four secret missions now has its own map and guardian (`world3d/secretMaps.ts`, `worlds/secret101-104.tsx`):
+
+| Map | Mission | Look | Reacts to |
+|---|---|---|---|
+| 101 The Whispering Crypt | Ghost Commit | Misty graveyard, crypt, drifting orbs | commits + reflog entries light the orbs; the crypt door opens when reflog/commits exist |
+| 102 The Moonlit Sanctum | Silent Guardian | Moonlit hedge avenue, ward stones, gate | one ward stone wakes per `.gitignore` rule (new `ignoreRules` signal) |
+| 103 The Shattered Gatehouse | Gate Crasher | Gorge road, ruined gatehouse, portcullis | `rejectedPush`: portcullis glows red and stays locked; `pushed`: it rises and turns gold |
+| 104 The Tangled Spire | Clean Timeline | Floating causeway, gears, ribbons of time | extra branches or an unfinished merge: ribbons knotted pink; linear history: they straighten and turn cyan |
+
+Guardians: Ghost (new `Phantom` model), Silent Sentinel (stone knight), Gate Crasher Ogre (brute), Tangled Chronomancer (timeline keeper). The same road/monster/gem/barrier rules apply. Secret maps are reached from the World Map's secret-mission list, as before.
+
+Heuristics that are design choices, not facts from the simulator: map 104's "tangled" test (more than one branch or a merge in progress), and map 101's "recovered" count (commits + reflog entries).
+
+## 10.5 Not done / unverified
+
+- Nothing here has been compiled or seen running. Likely tuning: sound levels and music balance, combat effect timing, secret-map scale.
+- The achievement-unlocked sound and a dedicated "XP gained" counter animation are not wired (XP gain plays the `xp` chime on each hit).
+- Secret maps have a single guardian each (their missions have one objective set), no side monsters.
+- Leaderboard is a mock until Start.ng provides a verified backend.
+
+
+---
+
+# 11. Pass 6: jumping and walking on bridges
+
+**Status: written, not compiled or run.** New tests: `surface.test.ts` (jump physics, decks, rails).
+
+- **Jump:** Space (or the on-screen Jump button on touch). One jump at a time; gravity and landing are in `world3d/surface.ts` (`stepVertical`). The hero tucks its legs and raises its arms in the air; jump and landing sounds play. Space still presses a focused button, and never fires while typing in the terminal. Jumping does not get you past a monster: the road barrier works in the ground plane.
+- **Steady camera:** the camera follows ground height rather than jump height, so a jump does not yank the view.
+- **Bridge decks:** worlds can declare `bridges` (deck, width, optional gap). The hero stands on the deck (it is now a real surface instead of the terrain under it), steps up onto it from the bank, and walks across with wooden footstep sounds. Side rails stop you walking off the sides while you are on the deck; the ends stay open. If you drop below a deck (for example into the stream) you wade underneath instead of snapping up.
+- **World 1:** the stream bridge is a real deck. **World 8:** the lava bridge has a deck and rails. **World 4:** the road now continues across the ravine bridge to the dragon's arena. The bridge is whole while no merge conflict is unresolved; if it breaks while you are on it you are put back on the south bank (`rescue`). Regular monsters still stand on the south bank only (`stationSpan`), so a broken bridge can never stop you from reaching a fight.
+- Decor bridges in other worlds (the cave's broken bridge, the Remote Kingdom's rope bridge, the forest log) are not on the hero's road and remain scenery.
+
+Unverified in a browser: jump height/feel (9.5 up, 28 gravity), deck step-up smoothness, and rail clearance.
+
+
+---
+
+# 12. Pass 7: a gentler, deeper game
+
+**Status: written, not compiled or run.** Tests added: `explain.test.ts`, and new cases in `gameEngine.test.ts` (shield, practice, crystal, hints). Two older engine tests were updated because the first wrong command of every fight is now absorbed.
+
+**Mistakes teach instead of just punishing**
+- Every failed command now gets a plain-language "why and what to do" line (`engine/explain.ts`), built from the simulator's real error messages: no repository yet, file not found, push rejected, branch name taken, commit without a message, not a Git command, and more.
+- **Commit Shield** (an ability already described in the data, now real): absorbs the first wrong command of every fight, then recharges. It is derived from your current rank, so beginners have it from the start (previously abilities unlocked only when the rank changed, so rank 1 would never have received one).
+- **Recovery Crystal** (rank 2+): a header button that restores full health, once per level.
+- **Conflict Sense**: when you ask for a hint during a merge, it names the files that still have conflicts.
+- **Stepped hints**: the first `hint` gives a nudge; asking again also explains the concept.
+- **Practice mode** (pause menu; offered on the defeat screen): wrong commands never cost health. XP is unchanged.
+
+**Polish and reach**
+- **Graphics quality** (High / Medium / Low) in the pause menu: shadows, resolution and particle counts. Phones start on Low. Changing it rebuilds the world.
+- **Victory screen** after the Merge Dragon falls ("Claim victory!" on the cleared panel): rank, XP, gems, quests, proficiency score, links to the leaderboard.
+- New feedback for the new beats (BLOCKED!, +HP, practice notes) in toasts, 3D effects and sounds.
+
+**Deliberately not done**
+- New challenge *types* (predict-the-output, fix-the-command, ordering). They need new quest data and UI, and are the best next content step.
+- Branch Vision and Timekeeper abilities have no effect yet (they refer to map and quest-unlock features that do not exist).
+- Start.ng integration: done in pass 8 below, from the official documentation.
+
+
+---
+
+# 13. Pass 8: real start.ng integration
+
+The earlier sections (and the placeholders they describe) are superseded by the official start.ng documentation, now implemented. Full details and the publishing steps are in `docs/START_NG_INTEGRATION.md`.
+
+- **Login:** the real connect-page protocol (`startng:whoami`), origin-checked, with start.ng's own guest and an offline-guest fallback when not on start.ng. Sign-in button for guests.
+- **Character rule:** the 3D hero now draws every start.ng character field (body, tunic, trousers/skirt, skin, hair color, 7 hair styles, 5 hats, 6 accessories). The old local-only fields (accent colour, materials, cape/helmet/dragon armour) were removed because start.ng's schema replaces them.
+- **Leaderboard:** `public/startng.json` declares four columns (xp, worlds, gems, secrets); scores are saved after each save for signed-in players; the screen reads start.ng's board. The dev mock and demo players remain for `npm run dev`.
+- **Saves:** start.ng has no cloud save for games, so progress is saved in the browser per player id. Documented as a limitation.
+- **Publishing:** the Vite source page moved to `web/` and the build goes to `dist/`, which is now committed (start.ng never builds; a source `index.html` at the repo top is refused). Added `cover.png` and `startng.json`.
+- The platform's multiplayer rooms are not used (Git Quest is single-player).

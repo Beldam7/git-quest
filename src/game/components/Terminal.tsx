@@ -7,9 +7,13 @@ interface TerminalProps {
   onCommand: (input: string) => void;
   onClose?: () => void;
   isActive: boolean;
+  /** Shown in the empty input, e.g. to tell the player what to do next. */
+  placeholder?: string;
+  /** Bump this number to move keyboard focus into the input (used when a fight starts). */
+  focusToken?: number;
 }
 
-export function GameTerminal({ history, onCommand, onClose, isActive }: TerminalProps) {
+export function GameTerminal({ history, onCommand, onClose, isActive, placeholder, focusToken }: TerminalProps) {
   const [input, setInput] = useState('');
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -22,11 +26,17 @@ export function GameTerminal({ history, onCommand, onClose, isActive }: Terminal
     }
   }, [history]);
 
+  // Do not grab the keyboard on first render (the player may want to walk with WASD); only when resuming
+  // from a pause or when asked to (a fight starting).
+  const mounted = useRef(false);
   useEffect(() => {
-    if (isActive && inputRef.current) {
-      inputRef.current.focus();
-    }
+    if (!mounted.current) { mounted.current = true; return; }
+    if (isActive && inputRef.current) inputRef.current.focus();
   }, [isActive]);
+
+  useEffect(() => {
+    if (focusToken) inputRef.current?.focus();
+  }, [focusToken]);
 
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
@@ -99,7 +109,7 @@ export function GameTerminal({ history, onCommand, onClose, isActive }: Terminal
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           aria-label="Git command"
-          placeholder="Type a git command, e.g. git status"
+          placeholder={placeholder ?? 'Type a git command, e.g. git status'}
           className="flex-1 bg-transparent text-kq-text font-mono text-base outline-none placeholder:text-gray-600"
           autoComplete="off"
           spellCheck={false}

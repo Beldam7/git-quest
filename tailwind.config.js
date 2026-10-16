@@ -3,7 +3,7 @@
 // The default blue/green/gray scales are retuned so existing utility classes
 // (bg-blue-600, text-gray-400, ...) pick up the kingdom palette automatically.
 export default {
-  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
+  content: ['./web/index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
       colors: {

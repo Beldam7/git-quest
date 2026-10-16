@@ -4,9 +4,14 @@ import type * as THREE from 'three';
 import { Box, Bridge, Column, Cyl, Fx, Glow, Rocks, Scatter, Trees, Water, line, scatter, useSmooth } from '../kit';
 import { fbm, flatten, smoothstep } from '../noise';
 import type { Circle, SceneProps, WorldDef, WorldSignals } from '../types';
+import { distToPath, makePath, project, roadProfile, smoothPath } from '../path';
 
 /** WORLD 4: CONFLICT CANYON. A ravine split by conflicting changes; the bridge is only whole while no merge conflict is unresolved. */
 
+const PATH_PTS = smoothPath([[0, 28], [-12, 22], [12, 16], [-8, 10], [0, 4], [0, -2], [0, -8], [0, -12]]);
+// Regular monsters stand on the south bank only, so a broken bridge can never keep you from a fight.
+const SOUTH_BANK_S = project(makePath(PATH_PTS), 0, 4).s;
+const ROAD = roadProfile(PATH_PTS, 2.2, 26, 8);
 const RAVINE_Z = -5;
 const BRIDGE_Y = 0.9;
 const inRavine = (z: number) => Math.abs(z - RAVINE_Z) < 5.2;
@@ -15,16 +20,18 @@ const bridgeIntact = (s: WorldSignals) => s.unresolvedConflicts === 0 && !s.merg
 const heightAt = (x: number, z: number): number => {
   const ax = Math.abs(x);
   let y = (fbm(x * 0.07 + 2, z * 0.07 + 8) - 0.5) * 2.6;
-  y = flatten(y, x, z, 0, 14, 10, 18, 0.9);
+  y += ROAD(x, z);
+  y = flatten(y, x, z, 0, 4, 4, 9, 0.9);
+  y = flatten(y, x, z, 0, 28, 4, 9, 0.9);
   y = flatten(y, x, z, 0, -18, 9, 17, 0.9);
-  y = flatten(y, x, z, 0, -31, 11, 18, 1.2);
+  y = flatten(y, x, z, 0, -24, 11, 18, 1.2);
   y += smoothstep(24, 38, ax) * 24 * (0.65 + fbm(x * 0.05, z * 0.05));
   y += smoothstep(40, 56, Math.abs(z + 4)) * 20;
   y -= 17 * smoothstep(7.2, 4.6, Math.abs(z - RAVINE_Z));
   return y;
 };
 
-const rough = (x: number, z: number, y: number) => Math.abs(x) < 4 || Math.abs(z - RAVINE_Z) < 7 || Math.hypot(x, z + 31) < 14 || y < -1 || Math.abs(x) > 34;
+const rough = (x: number, z: number, y: number) => Math.abs(x) < 4 || Math.abs(z - RAVINE_Z) < 7 || Math.hypot(x, z + 24) < 14 || y < -1 || Math.abs(x) > 34 || distToPath(PATH_PTS, x, z) < 3.2;
 const SPIRES = scatter(41, 34, { rMin: 16, rMax: 46, h: heightAt, sMin: 1.2, sMax: 3, reject: (x, z, y) => Math.abs(x) < 22 || y < -1 });
 const BOULDERS = scatter(42, 40, { rMax: 40, h: heightAt, sMin: 0.7, sMax: 2, reject: rough });
 const DEAD = scatter(43, 14, { rMax: 38, h: heightAt, sMin: 0.8, sMax: 1.3, reject: rough });
@@ -37,7 +44,7 @@ const CRACKS = [
 ];
 
 const obstacles: Circle[] = [
-  ...Array.from({ length: 6 }, (_, i): Circle => [Math.cos((i / 6) * Math.PI * 2) * 11, -31 + Math.sin((i / 6) * Math.PI * 2) * 11, 0.9]),
+  ...Array.from({ length: 6 }, (_, i): Circle => [Math.cos((i / 6) * Math.PI * 2) * 11, -24 + Math.sin((i / 6) * Math.PI * 2) * 11, 0.9]),
   ...SPIRES.map((t): Circle => [t.x, t.z, 1.1 * (t.s ?? 1)]),
   ...BOULDERS.map((t): Circle => [t.x, t.z, 0.9 * (t.s ?? 1)]),
   ...DEAD.map((t): Circle => [t.x, t.z, 0.5]),
@@ -79,7 +86,7 @@ function Scene({ signals, reduced, coarse }: SceneProps) {
       {[5, -15].map((z) => [-1.6, 1.6].map((x) => <Box key={`${x}${z}`} a={[0.5, 1.8, 0.5]} p={[x, BRIDGE_Y + 0.7, z]} c="#4d3220" />))}
 
       {/* Arena ruins */}
-      <group position={[0, heightAt(0, -31), -31]}>
+      <group position={[0, heightAt(0, -24), -24]}>
         <Cyl a={[11.5, 12.2, 0.9, 28]} p={[0, 0.3, 0]} c="#6b3a2a" />
         <Cyl a={[8, 8, 0.1, 28]} p={[0, 0.8, 0]} c="#2a1a1a" e="#ff4d1a" ei={0.15} />
         {Array.from({ length: 6 }, (_, i) => {
@@ -87,8 +94,8 @@ function Scene({ signals, reduced, coarse }: SceneProps) {
           return <Column key={i} p={[Math.cos(a) * 11, 0.7, Math.sin(a) * 11]} h={7} color="#7b6350" broken={i % 2 === 1} />;
         })}
       </group>
-      <Column p={[-5, heightAt(-5, 12), 12]} h={6} color="#7b6350" broken />
-      <Column p={[6, heightAt(6, 16), 16]} h={5} color="#7b6350" broken />
+      <Column p={[-22, heightAt(-22, 12), 12]} h={6} color="#7b6350" broken />
+      <Column p={[22, heightAt(22, 16), 16]} h={5} color="#7b6350" broken />
 
       <Fx p={[0, 8, -5]} area={[40, 18, 60]} count={100} color="#ff9a4d" size={5} speed={0.8} reduced={reduced} coarse={coarse} />
       {signals.conflictsResolved && <Fx p={[0, 3, RAVINE_Z]} area={[6, 6, 18]} count={50} color="#ffe08a" size={6} reduced={reduced} coarse={coarse} />}
@@ -106,8 +113,9 @@ export const WORLD4: WorldDef = {
     size: 170, segments: 140,
     palette: { low: '#a3502a', mid: '#c2672f', high: '#d88a4a', cliff: '#8a3a22', lowY: -2, highY: 18, cliffSlope: 0.22, bands: ['#b4552a', '#8f3a1f'], bandSize: 1.6 },
   },
-  radius: 40, spawn: [0, 28], heightAt, obstacles,
+  radius: 40, spawn: PATH_PTS[0], path: PATH_PTS, stationSpan: SOUTH_BANK_S, rescue: [0, 6], bossEngage: 32, heightAt, obstacles,
+  bridges: [{ a: [0, 5], b: [0, -15], y: BRIDGE_Y, width: 2.6, gap: (s) => (bridgeIntact(s) ? 0 : 0.55) }],
   groundAt: (x, z, s) => (inRavine(z) && Math.abs(x) < 1.3 && bridgeIntact(s) ? BRIDGE_Y : heightAt(x, z)),
   walkable: (x, z, s) => !inRavine(z) || (Math.abs(x) < 1.3 && bridgeIntact(s)),
-  boss: { position: [0, -31], facing: 0 }, Scene,
+  boss: { position: [0, -22], facing: 0 }, Scene,
 };

@@ -4,14 +4,17 @@ import { Html } from '@react-three/drei';
 import { Box, Cn, Cyl, Fx, Glow, Rocks, Scatter, Trees, Water, Sph, line, scatter, useSmooth } from '../kit';
 import { bump, fbm, flatten, smoothstep } from '../noise';
 import type { Circle, SceneProps, WorldDef } from '../types';
+import { distToPath, roadProfile, smoothPath } from '../path';
 
 /** WORLD 3: THE BRANCHING FOREST. Three glowing trails fork and rejoin; the one matching the checked-out branch lights up. */
 
+const PATH_PTS = smoothPath([[0, 32], [2, 24], [-2, 16], [0, 8], [4, 0], [-3, -9], [3, -17], [0, -23]]);
+const ROAD = roadProfile(PATH_PTS, 2.4, 28, 8);
 const FORK: [number, number] = [0, 8];
 const JOIN: [number, number] = [0, -26];
 /** Control points (x,z) for each route between the fork and the rejoin clearing. */
 const ROUTES: Array<Array<[number, number]>> = [
-  [[0, 8], [0, -2], [0, -14], [0, -26]],
+  [[0, 8], [4, 0], [-3, -9], [3, -17], [0, -26]],
   [[0, 8], [-9, 2], [-16, -10], [-8, -20], [0, -26]],
   [[0, 8], [9, 2], [17, -8], [9, -21], [0, -26]],
 ];
@@ -31,6 +34,7 @@ const routeDist = (x: number, z: number): number => {
 const heightAt = (x: number, z: number): number => {
   const r = Math.hypot(x, z);
   let y = (fbm(x * 0.05 + 9, z * 0.05 + 2) - 0.45) * 7;
+  y += ROAD(x, z);
   y += bump(x, z, -28, -8, 14, 4) + bump(x, z, 30, 6, 12, 3.2);
   y = flatten(y, x, z, JOIN[0], JOIN[1], 7, 13, 0.8);
   y = flatten(y, x, z, 0, 30, 6, 12, 0.5);
@@ -40,7 +44,7 @@ const heightAt = (x: number, z: number): number => {
   return y;
 };
 
-const offRoute = (x: number, z: number, y: number) => y < -0.1 || routeDist(x, z) < 2.6 || Math.hypot(x - JOIN[0], z - JOIN[1]) < 10 || Math.hypot(x, z - 30) < 4;
+const offRoute = (x: number, z: number, y: number) => y < -0.1 || routeDist(x, z) < 2.6 || Math.hypot(x - JOIN[0], z - JOIN[1]) < 10 || Math.hypot(x, z - 30) < 4 || distToPath(PATH_PTS, x, z) < 3;
 const PINES = scatter(31, 90, { rMin: 6, rMax: 46, h: heightAt, sMin: 0.9, sMax: 1.7, reject: offRoute });
 const OAKS = scatter(32, 80, { rMin: 6, rMax: 44, h: heightAt, sMin: 0.9, sMax: 1.5, reject: offRoute });
 const SHROOMS = scatter(33, 40, { rMax: 40, h: heightAt, sMin: 0.5, sMax: 1.1, reject: offRoute });
@@ -134,6 +138,6 @@ export const WORLD3: WorldDef = {
     hemiSky: '#e8ffd6', hemiGround: '#2d5a34', hemiIntensity: 0.85, sun: '#ffe9a8', sunIntensity: 1.5, sunPosition: [24, 38, 10],
   },
   terrain: { size: 170, segments: 130, palette: { low: '#2f7a3f', mid: '#3e9a4c', high: '#5f8f58', cliff: '#6b6f66', lowY: -1, highY: 12, cliffSlope: 0.3 } },
-  radius: 44, spawn: [0, 32], heightAt, obstacles,
+  radius: 44, spawn: PATH_PTS[0], path: PATH_PTS, heightAt, obstacles,
   boss: { position: [0, -30], facing: 0 }, Scene,
 };

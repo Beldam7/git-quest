@@ -15,7 +15,7 @@ export function CharacterPreview({ appearance }: { appearance: CharacterAppearan
       <Canvas dpr={[1, 1.5]} camera={{ position: [0, 1.6, 5.4], fov: 40 }} onCreated={({ camera }) => camera.lookAt(0, 1.1, 0)}>
         <hemisphereLight args={['#9ec5ff', '#1b2a1f', 1]} />
         <directionalLight position={[3, 5, 4]} intensity={1.4} color="#ffd9a0" />
-        <pointLight position={[-2, 1.5, 2]} color={appearance.accentColor} intensity={6} distance={8} />
+        <pointLight position={[-2, 1.5, 2]} color="#3dd6f5" intensity={6} distance={8} />
         <mesh position={[0, -0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <circleGeometry args={[1.4, 32]} />
           <meshStandardMaterial color="#1c2f52" roughness={0.9} />

@@ -1,15 +1,19 @@
 import { Box, Cn, Cyl, Fx, Glow, Island, Rocks, Scatter, Tower, Trees, Wall, Water, Banner, Bridge, Crystals, Lantern, line, scatter, useSmooth } from '../kit';
 import { bump, fbm, flatten, smoothstep } from '../noise';
 import type { Circle, SceneProps, WorldDef } from '../types';
+import { distToPath, roadProfile, smoothPath } from '../path';
 
 /** WORLD 1: THE FORGOTTEN REPOSITORY. Mossy castle ruins, rolling hills, a stream, and a dormant shrine that awakens on `git init`. */
 
 const SHRINE: [number, number] = [0, -12];
 const WALL_Z = -31;
+const PATH_PTS = smoothPath([[0, 26], [-7, 21], [-3, 16], [0, 13], [0, 8], [0, 3], [5, -1], [9, -3], [8, -6]]);
+const ROAD = roadProfile(PATH_PTS, 2.6, 30, 9);
 
 const heightAt = (x: number, z: number): number => {
   const r = Math.hypot(x, z);
   let y = (fbm(x * 0.045 + 3, z * 0.045 + 7) - 0.45) * 9;
+  y += ROAD(x, z);
   y += bump(x, z, 0, -40, 28, 6);
   y = flatten(y, x, z, SHRINE[0], SHRINE[1], 8, 15, 1.2);
   y = flatten(y, x, z, 0, 24, 6, 12, 0.6);
@@ -19,8 +23,10 @@ const heightAt = (x: number, z: number): number => {
   return y;
 };
 
+const BRIDGE_Y = Math.max(heightAt(0, 13), heightAt(0, 3)) + 0.3;
+
 const notOnPath = (x: number, z: number, y: number) =>
-  y < -0.2 || (Math.abs(x) < 3.5 && z > -16 && z < 27) || Math.hypot(x - SHRINE[0], z - SHRINE[1]) < 9 || z < WALL_Z + 3 || Math.hypot(x, z - 24) < 3;
+  y < -0.2 || (Math.abs(x) < 3.5 && z > -16 && z < 27) || Math.hypot(x - SHRINE[0], z - SHRINE[1]) < 9 || z < WALL_Z + 3 || Math.hypot(x, z - 24) < 3 || distToPath(PATH_PTS, x, z) < 3.4;
 
 const PINES = scatter(11, 46, { rMin: 24, rMax: 50, h: heightAt, sMin: 0.9, sMax: 1.5, reject: notOnPath });
 const OAKS = scatter(12, 40, { rMin: 10, rMax: 40, h: heightAt, sMin: 0.8, sMax: 1.3, reject: notOnPath });
@@ -100,7 +106,6 @@ function CastleGate({ awake }: { awake: boolean }) {
 function Scene({ signals, reduced, coarse }: SceneProps) {
   const awake = signals.initialized;
   const lanterns = useSmooth(awake ? 1 : 0.15, 1);
-  const bridgeY = Math.max(heightAt(0, 13), heightAt(0, 3)) + 0.3;
   return (
     <>
       <Water y={-0.45} color="#2f8fb8" />
@@ -110,7 +115,7 @@ function Scene({ signals, reduced, coarse }: SceneProps) {
       <Scatter items={FLOWERS_Y} lift={0.15}><sphereGeometry args={[0.16, 6, 5]} /><meshStandardMaterial color="#f8d34a" emissive="#f8d34a" emissiveIntensity={0.25} /></Scatter>
       <Scatter items={FLOWERS_P} lift={0.15}><sphereGeometry args={[0.16, 6, 5]} /><meshStandardMaterial color="#f48fb1" emissive="#f48fb1" emissiveIntensity={0.2} /></Scatter>
       <Scatter items={PATH}><boxGeometry args={[1.7, 0.14, 1.3]} /><meshStandardMaterial color="#9b978c" flatShading /></Scatter>
-      <Bridge a={[0, 14]} b={[0, 2]} y={bridgeY} />
+      <Bridge a={[0, 14]} b={[0, 2]} y={BRIDGE_Y} />
 
       {/* Castle ruins */}
       {[-24, -17, -10, 10, 17, 24].map((x, i) => (
@@ -145,5 +150,6 @@ export const WORLD1: WorldDef = {
     hemiSky: '#cfe6ff', hemiGround: '#4a6b3a', hemiIntensity: 0.9, sun: '#fff1d0', sunIntensity: 1.7, sunPosition: [30, 40, 18],
   },
   terrain: { size: 170, segments: 130, palette: { low: '#5a8f48', mid: '#6fae55', high: '#8a9a6a', cliff: '#7a7f88', lowY: -1, highY: 14, cliffSlope: 0.3 } },
-  radius: 44, spawn: [0, 26], heightAt, obstacles, boss: { position: [13, -9], facing: -0.6 }, Scene,
+  radius: 44, spawn: PATH_PTS[0], path: PATH_PTS, heightAt, obstacles,
+  bridges: [{ a: [0, 14], b: [0, 2], y: BRIDGE_Y, width: 2.4 }], boss: { position: [13, -9], facing: -0.6 }, Scene,
 };

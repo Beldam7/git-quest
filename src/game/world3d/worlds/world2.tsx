@@ -3,15 +3,19 @@ import * as THREE from 'three';
 import { Box, Cn, Cyl, Column, Fx, Glow, Bridge, Rocks, Scatter, Torus, Water, Crystals, scatter, useSmooth } from '../kit';
 import { bump, fbm, flatten, smoothstep, vnoise } from '../noise';
 import type { Circle, SceneProps, WorldDef } from '../types';
+import { distToPath, roadProfile, smoothPath } from '../path';
 
 /** WORLD 2: THE CAVE OF LOST COMMITS. A vaulted cavern whose inscriptions and floating fragments light up as commit history appears. */
 
+const PATH_PTS = smoothPath([[0, 30], [-8, 24], [-4, 16], [-6, 8], [-1, 0], [3, -6], [0, -14], [0, -17]]);
+const ROAD = roadProfile(PATH_PTS, 1.8, 24, 7);
 const POOLS: Array<[number, number, number]> = [[-15, 6, 5.5], [17, -4, 6], [4, 18, 4]];
 const inChasm = (x: number, z: number) => x > 12 && x < 33 && Math.abs(z - 16) < 4.2;
 
 const heightAt = (x: number, z: number): number => {
   const r = Math.hypot(x, z);
   let y = (fbm(x * 0.08 + 1, z * 0.08 + 4) - 0.5) * 3.2;
+  y += ROAD(x, z);
   for (const [px, pz, pr] of POOLS) y -= 2.6 * Math.exp(-((x - px) ** 2 + (z - pz) ** 2) / (2 * pr * pr));
   y -= 7 * Math.exp(-((z - 16) ** 2) / (2 * 2 * 2)) * smoothstep(10, 15, x) * smoothstep(36, 31, x);
   y = flatten(y, x, z, 0, -28, 9, 15, 0.8);
@@ -21,7 +25,7 @@ const heightAt = (x: number, z: number): number => {
   return y;
 };
 
-const dry = (x: number, z: number, y: number) => y < -0.4 || inChasm(x, z) || Math.hypot(x, z - 28) < 4 || Math.hypot(x, z + 28) < 10 || Math.hypot(x, z) > 38;
+const dry = (x: number, z: number, y: number) => y < -0.4 || inChasm(x, z) || Math.hypot(x, z - 28) < 4 || Math.hypot(x, z + 28) < 10 || Math.hypot(x, z) > 38 || distToPath(PATH_PTS, x, z) < 3;
 const STALAGMITES = scatter(21, 50, { rMax: 40, h: heightAt, sMin: 0.6, sMax: 1.7, reject: dry });
 const CRYSTAL_B = scatter(22, 26, { rMin: 14, rMax: 38, h: heightAt, sMin: 0.8, sMax: 2.2, reject: dry });
 const CRYSTAL_P = scatter(23, 22, { rMin: 14, rMax: 38, h: heightAt, sMin: 0.8, sMax: 2.0, reject: dry });
@@ -144,7 +148,7 @@ export const WORLD2: WorldDef = {
     hemiSky: '#6a7bd8', hemiGround: '#241b45', hemiIntensity: 0.65, sun: '#8aa0ff', sunIntensity: 0.25, sunPosition: [10, 30, 10], enclosed: true,
   },
   terrain: { size: 110, segments: 120, palette: { low: '#2c2a4a', mid: '#3a3760', high: '#4b4670', cliff: '#2a2646', lowY: -2, highY: 18, cliffSlope: 0.32 } },
-  radius: 36, spawn: [0, 30], heightAt, obstacles,
+  radius: 36, spawn: PATH_PTS[0], path: PATH_PTS, heightAt, obstacles,
   walkable: (x, z) => heightAt(x, z) > -1.7 && !inChasm(x, z),
   boss: { position: [0, -22], facing: 0 }, Scene,
 };

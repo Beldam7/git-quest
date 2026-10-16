@@ -23,6 +23,13 @@ export interface WorldSignals {
   rejectedPush: boolean;
   stashCount: number;
   reflogCount: number;
+  /** Number of .gitignore rules. */
+  ignoreRules: number;
+  /** Number of patterns in .gitignore. */
+  ignoredCount: number;
+  /** Commits with more than one parent (merge commits). */
+  mergeCommitCount: number;
+  rebaseInProgress: boolean;
   issueCount: number;
   openPullRequests: number;
   mergedPullRequests: number;
@@ -70,6 +77,17 @@ export interface SceneProps {
 
 export type Circle = [number, number, number];
 
+/** A bridge you can stand on: a deck from `a` to `b` at height `y`, with side rails. */
+export interface BridgeSpec {
+  a: [number, number];
+  b: [number, number];
+  /** Height of the plank centres; the walkable surface is a hair above. */
+  y: number;
+  width: number;
+  /** Fraction of the span (centred) that is missing, e.g. 0.55 while a conflict has broken the bridge. */
+  gap?: (s: WorldSignals) => number;
+}
+
 export interface WorldDef {
   id: number;
   theme: WorldTheme;
@@ -85,5 +103,15 @@ export interface WorldDef {
   /** Solid circles [x, z, radius]. */
   obstacles: Circle[];
   boss: { position: [number, number]; facing: number };
+  /** Bridges the hero can walk on (deck height + rails). */
+  bridges?: BridgeSpec[];
+  /** Where the hero is put back if the ground vanishes under them (default: spawn). */
+  rescue?: [number, number];
+  /** Arc length of the route that regular monsters are spread over (default: the whole route). */
+  stationSpan?: number;
+  /** Hero route from the spawn point to the boss approach. Monsters (one per question) stand along it. */
+  path: Array<[number, number]>;
+  /** Distance at which the boss fight starts (default 16). */
+  bossEngage?: number;
   Scene: ComponentType<SceneProps>;
 }

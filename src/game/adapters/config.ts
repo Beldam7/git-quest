@@ -2,13 +2,16 @@ import { MockAuthAdapter, StartNgAuthAdapter } from './AuthAdapter';
 import type { AuthAdapter } from './AuthAdapter';
 import { LocalCharacterAppearanceAdapter, StartNgCharacterAppearanceAdapter } from './CharacterAppearanceAdapter';
 import type { CharacterAppearanceAdapter } from './CharacterAppearanceAdapter';
-import { LocalProgressAdapter, StartNgProgressAdapter } from './ProgressAdapter';
+import { LocalProgressAdapter } from './ProgressAdapter';
 import type { ProgressAdapter } from './ProgressAdapter';
+import { LocalLeaderboardAdapter, StartNgLeaderboardAdapter } from './LeaderboardAdapter';
+import type { LeaderboardAdapter } from './LeaderboardAdapter';
 
 /**
  * 'mock'    — development-only adapters (fake sign-in, localStorage progress, editable local styling).
- * 'startng' — real Start.ng adapters. These are UNIMPLEMENTED placeholders until the
- *             platform contract is verified (see docs/START_NG_INTEGRATION.md).
+ * 'startng' — the real start.ng adapters (player, character and leaderboard through start.ng's connect
+ *             page; progress saved in the browser). Verified against the platform docs, see
+ *             docs/START_NG_INTEGRATION.md. Off start.ng (local play) it runs as an offline guest.
  */
 export type AdapterMode = 'mock' | 'startng';
 
@@ -29,6 +32,7 @@ export interface Adapters {
   auth: AuthAdapter;
   progress: ProgressAdapter;
   appearance: CharacterAppearanceAdapter;
+  leaderboard: LeaderboardAdapter;
   /** Character styling is editable in-game only with the dev mock; Start.ng owns it in production. */
   appearanceEditable: boolean;
 }
@@ -40,14 +44,20 @@ export function createAdapters(mode: AdapterMode = resolveAdapterMode()): Adapte
       auth: new MockAuthAdapter(),
       progress: new LocalProgressAdapter(),
       appearance: new LocalCharacterAppearanceAdapter(),
+      leaderboard: new LocalLeaderboardAdapter(),
       appearanceEditable: true,
     };
   }
+  // Production: start.ng supplies the player, their character and the shared leaderboard.
+  // Progress is saved in this browser (start.ng has no cloud save for games).
+  const appearance = new StartNgCharacterAppearanceAdapter();
+  const auth = new StartNgAuthAdapter((style) => appearance.applyStyle(style));
   return {
     mode,
-    auth: new StartNgAuthAdapter(),
-    progress: new StartNgProgressAdapter(),
-    appearance: new StartNgCharacterAppearanceAdapter(),
+    auth,
+    progress: new LocalProgressAdapter(),
+    appearance,
+    leaderboard: new StartNgLeaderboardAdapter(() => auth.getUser()),
     appearanceEditable: false,
   };
 }

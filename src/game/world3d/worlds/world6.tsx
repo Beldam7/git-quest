@@ -5,9 +5,12 @@ import { Html } from '@react-three/drei';
 import { Banner, Box, Cn, Cyl, Fx, Glow, Lantern, Rocks, Sph, Torus, Trees, Water, scatter, useSmooth } from '../kit';
 import type { V3 } from '../kit';
 import { bump, fbm, flatten, smoothstep } from '../noise';
+import { smoothPath } from '../path';
 import type { Circle, SceneProps, WorldDef } from '../types';
 
 /** WORLD 6: THE COLLABORATION GUILD. A courtyard of workshops, a notice board, a review chamber and a forge. */
+
+const PATH_PTS = smoothPath([[0, 30], [-6, 22], [4, 14], [8, 6], [2, -1]]);
 
 const heightAt = (x: number, z: number): number => {
   const r = Math.hypot(x, z);
@@ -189,6 +192,6 @@ export const WORLD6: WorldDef = {
     hemiSky: '#fff4dc', hemiGround: '#5f7a4a', hemiIntensity: 0.95, sun: '#ffd9a0', sunIntensity: 1.6, sunPosition: [-26, 36, 24],
   },
   terrain: { size: 170, segments: 120, palette: { low: '#6f9a52', mid: '#7fae5d', high: '#9ab36a', cliff: '#8d8a80', lowY: -2, highY: 10, cliffSlope: 0.3 } },
-  radius: 36, spawn: [0, 30], heightAt, obstacles,
+  radius: 36, spawn: PATH_PTS[0], path: PATH_PTS, heightAt, obstacles,
   boss: { position: [0, -8], facing: 0 }, Scene,
 };

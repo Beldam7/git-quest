@@ -220,7 +220,21 @@ export interface GameProgress {
   lastSavedAt: number | null;
   createdAt: number;
   challengeProgress: Record<string, { hintsUsed: number; objectivesCompleted: string[] }>;
+  /** Gems picked up along the paths (ids like `g3-7`). Optional so older saves still load. */
+  collectedGems?: string[];
 }
+
+/** What just happened in the fight, so the 3D world and HUD can react. `id` increases with every event. */
+export type CombatEvent =
+  | { id: number; type: 'hit'; remaining: number; total: number }
+  | { id: number; type: 'miss' }
+  | { id: number; type: 'player-hit'; damage: number; health: number }
+  | { id: number; type: 'defeated'; healed: number }
+  | { id: number; type: 'player-down' }
+  | { id: number; type: 'restart' }
+  | { id: number; type: 'gem'; xp: number }
+  | { id: number; type: 'shield' }
+  | { id: number; type: 'heal'; amount: number };
 
 export interface GameSession {
   progress: GameProgress;
@@ -233,7 +247,10 @@ export interface GameSession {
 export type GameScreen =
   | 'menu'
   | 'worldMap'
+  | 'leaderboard'
+  | 'victory'
   | 'explore'
+  | 'leaderboard'
   | 'game'
   | 'pause'
   | 'achievements'

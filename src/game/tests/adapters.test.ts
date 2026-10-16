@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createAdapters } from '../adapters/config';
 import { MockAuthAdapter, StartNgAuthAdapter } from '../adapters/AuthAdapter';
 import type { AuthState } from '../adapters/AuthAdapter';
-import { LocalProgressAdapter, StartNgProgressAdapter } from '../adapters/ProgressAdapter';
+import { LocalProgressAdapter } from '../adapters/ProgressAdapter';
+import { StartNgLeaderboardAdapter } from '../adapters/LeaderboardAdapter';
 import {
   DEFAULT_APPEARANCE,
   LocalCharacterAppearanceAdapter,
@@ -25,35 +26,50 @@ describe('adapter selection', () => {
     expect(a.appearanceEditable).toBe(true);
   });
 
-  it('startng mode wires the real (unimplemented) adapters and locks styling', () => {
+  it('startng mode wires the real start.ng adapters, keeps saves in the browser, and locks styling', () => {
     const a = createAdapters('startng');
     expect(a.mode).toBe('startng');
     expect(a.auth).toBeInstanceOf(StartNgAuthAdapter);
-    expect(a.progress).toBeInstanceOf(StartNgProgressAdapter);
+    expect(a.progress).toBeInstanceOf(LocalProgressAdapter); // start.ng has no cloud save for games
     expect(a.appearance).toBeInstanceOf(StartNgCharacterAppearanceAdapter);
+    expect(a.leaderboard).toBeInstanceOf(StartNgLeaderboardAdapter);
     expect(a.appearanceEditable).toBe(false);
   });
 });
 
-describe('Start.ng placeholders fail closed', () => {
-  it('auth is never authenticated and reports why', () => {
-    const auth = new StartNgAuthAdapter();
-    expect(auth.getState()).toBe('error');
-    expect(auth.getUser()).toBeNull();
-    expect(auth.getError()).toMatch(/not configured/i);
+describe('start.ng auth when there is no start.ng to talk to (local play)', () => {
+  it('lets the player play as an offline guest instead of getting stuck', async () => {
+    const styles: unknown[] = [];
+    const auth = new StartNgAuthAdapter((st) => styles.push(st));
+    await auth.refresh();
+    expect(auth.getState()).toBe('authenticated');
+    expect(auth.getUser()).toMatchObject({ id: 'guest', isGuest: true, offline: true });
+    expect(styles.length).toBeGreaterThan(0);
   });
+});
 
-  it('progress load/save/clear reject instead of pretending to work', async () => {
-    const p = new StartNgProgressAdapter();
-    await expect(p.load('u1')).rejects.toThrow();
-    await expect(p.save('u1', createNewProgress())).rejects.toThrow();
-    await expect(p.clear('u1')).rejects.toThrow();
-  });
-
-  it('appearance returns safe defaults and refuses in-game edits', () => {
+describe('start.ng character adapter', () => {
+  it('shows the platform character and refuses in-game edits', () => {
     const a = new StartNgCharacterAppearanceAdapter();
     expect(a.getAppearance()).toEqual(DEFAULT_APPEARANCE);
-    expect(() => a.setAppearance({ primaryColor: '#ff0000' })).toThrow();
+    let seen = a.getAppearance();
+    a.onChange((x) => (seen = x));
+    a.applyStyle({ body: 'female', primaryColor: '#a55eea', secondaryColor: '#0c6e5a', skinColor: '#8d5524', hairColor: '#17120f', hair: 'braids', hat: 'crown', accessory: 'earrings' });
+    expect(seen).toMatchObject({ body: 'female', hair: 'braids', hat: 'crown', accessory: 'earrings', primaryColor: '#a55eea' });
+    a.setAppearance(); // no-op: start.ng owns the character
+    expect(a.getAppearance().hat).toBe('crown');
+  });
+
+  it('falls back sensibly when start.ng adds an option the game does not know yet', () => {
+    const a = new StartNgCharacterAppearanceAdapter();
+    a.applyStyle({ hair: 'mohawk', hat: 'viking', accessory: 'monocle', body: 'robot', primaryColor: 'blue' });
+    expect(a.getAppearance()).toEqual(DEFAULT_APPEARANCE);
+  });
+
+  it('uses the default look when the player has no character yet (style is null)', () => {
+    const a = new StartNgCharacterAppearanceAdapter();
+    a.applyStyle(null);
+    expect(a.getAppearance()).toEqual(DEFAULT_APPEARANCE);
   });
 });
 
@@ -107,25 +123,34 @@ describe('LocalProgressAdapter user scoping', () => {
 });
 
 describe('character appearance', () => {
-  it('rejects invalid colors and unknown enum values', () => {
+  it('rejects invalid colors and unknown values, field by field', () => {
     const a = sanitizeAppearance({
       primaryColor: 'red',
       secondaryColor: '#12345',
-      accentColor: 'javascript:alert(1)',
+      skinColor: 'javascript:alert(1)',
+      hairColor: 42 as never,
+      hair: 'mohawk' as never,
+      hat: 'viking' as never,
       accessory: 'laser_eyes' as never,
-      materialVariant: 'plasma' as never,
+      body: 'robot' as never,
     });
     expect(a).toEqual(DEFAULT_APPEARANCE);
   });
 
-  it('local adapter notifies listeners and persists across instances (dev preview)', () => {
+  it('keeps valid values from a real start.ng style', () => {
+    const a = sanitizeAppearance({ body: 'female', primaryColor: '#a55eea', secondaryColor: '#0c6e5a', skinColor: '#8d5524', hairColor: '#17120f', hair: 'braids', hat: 'crown', accessory: 'earrings' });
+    expect(a.hair).toBe('braids');
+    expect(a.skinColor).toBe('#8d5524');
+  });
+
+  it('local adapter notifies listeners and persists across instances (dev editor)', () => {
     const a = new LocalCharacterAppearanceAdapter();
     let latest = a.getAppearance();
     a.onChange((x) => (latest = x));
-    a.setAppearance({ primaryColor: '#ff0000', accessory: 'cape' });
+    a.setAppearance({ primaryColor: '#ff0000', hat: 'tophat', hair: 'afro' });
     expect(latest.primaryColor).toBe('#ff0000');
-    expect(latest.accessory).toBe('cape');
+    expect(latest.hat).toBe('tophat');
     const b = new LocalCharacterAppearanceAdapter();
-    expect(b.getAppearance().primaryColor).toBe('#ff0000');
+    expect(b.getAppearance().hair).toBe('afro');
   });
 });
