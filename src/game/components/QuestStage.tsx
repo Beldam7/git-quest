@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Stars } from '@react-three/drei';
 import * as THREE from 'three';
@@ -40,15 +40,15 @@ function FloatingIsland({ position, scale, reduced }: { position: [number, numbe
     <group ref={ref} position={position} scale={scale}>
       <mesh position={[0, -0.9, 0]} rotation={[Math.PI, 0, 0]}>
         <coneGeometry args={[2, 2.2, 7]} />
-        <meshStandardMaterial color="#1c2f52" roughness={1} flatShading />
+        <meshStandardMaterial color="#4a5f8f" emissive="#1a2a4f" emissiveIntensity={0.8} roughness={1} flatShading />
       </mesh>
       <mesh>
         <cylinderGeometry args={[2.1, 2, 0.35, 7]} />
-        <meshStandardMaterial color="#2f7d5c" roughness={0.9} flatShading />
+        <meshStandardMaterial color="#49b383" emissive="#1c5a3f" emissiveIntensity={0.5} roughness={0.9} flatShading />
       </mesh>
       <mesh position={[0.3, 0.9, 0]}>
         <coneGeometry args={[0.6, 1.5, 6]} />
-        <meshStandardMaterial color="#1d5a3f" roughness={0.9} flatShading />
+        <meshStandardMaterial color="#2f8a5c" emissive="#12402b" emissiveIntensity={0.5} roughness={0.9} flatShading />
       </mesh>
     </group>
   );
@@ -97,10 +97,8 @@ function BossPlaceholder({ color, reduced }: { color: string; reduced: boolean }
 }
 
 function StageScene({ accent, isBoss, appearance, reduced, coarse }: QuestStageProps & { reduced: boolean; coarse: boolean }) {
-  const sky = useMemo(() => {
-    const c = new THREE.Color(accent).multiplyScalar(0.16).lerp(new THREE.Color('#060b17'), 0.55);
-    return `#${c.getHexString()}`;
-  }, [accent]);
+  // Fog matches the bottom of the CSS sky gradient so distant islands melt into it.
+  const fogColor = '#12306a';
   const ring = useRef<THREE.Mesh>(null);
   useFrame((_, delta) => {
     if (ring.current && !reduced) ring.current.rotation.z += delta * 0.25;
@@ -109,9 +107,8 @@ function StageScene({ accent, isBoss, appearance, reduced, coarse }: QuestStageP
 
   return (
     <>
-      <color attach="background" args={[sky]} />
-      <fog attach="fog" args={[sky, 16, 42]} />
-      <hemisphereLight args={['#9ec5ff', '#1b2a1f', 0.9]} />
+      <fog attach="fog" args={[fogColor, 20, 55]} />
+      <hemisphereLight args={['#b4d0ff', '#2a3f66', 1.1]} />
       <directionalLight position={[6, 10, 6]} intensity={1.3} color="#ffd9a0" />
       <pointLight position={[0, 2.2, 2]} color={accent} intensity={22} distance={14} />
       <Stars radius={60} depth={30} count={coarse ? 250 : 700} factor={3} fade speed={reduced ? 0 : 0.4} />
@@ -133,9 +130,9 @@ function StageScene({ accent, isBoss, appearance, reduced, coarse }: QuestStageP
 
       {isBoss && <BossPlaceholder color={bossColor} reduced={reduced} />}
 
-      <FloatingIsland position={[-8, 3, -6]} scale={1.1} reduced={reduced} />
-      <FloatingIsland position={[9, 5, -10]} scale={0.8} reduced={reduced} />
-      <FloatingIsland position={[-12, 7, -15]} scale={1.4} reduced={reduced} />
+      <FloatingIsland position={[-8.5, 1.4, -7]} scale={1.1} reduced={reduced} />
+      <FloatingIsland position={[10, 2.6, -11]} scale={0.85} reduced={reduced} />
+      <FloatingIsland position={[-14, 3.4, -17]} scale={1.4} reduced={reduced} />
 
       {[[-3.4, 1.6, 0.5], [3.4, 2.1, -0.5], [-2.2, 2.6, -2.2], [2.6, 1.3, 2.2]].map(([x, y, z], i) => (
         <Crystal key={i} position={[x, y, z]} color={i % 2 ? '#34d399' : '#3dd6f5'} speed={0.8 + i * 0.15} reduced={reduced} />
@@ -148,12 +145,16 @@ export function QuestStage(props: QuestStageProps) {
   const reduced = usePrefersReducedMotion();
   const coarse = useCoarsePointer();
   return (
-    <div className="absolute inset-0" role="img" aria-label={props.isBoss ? `Boss encounter${props.bossName ? `: ${props.bossName}` : ''}` : 'Your hero on the quest platform'}>
+    <div
+      className="absolute inset-0"
+      style={{ background: `radial-gradient(ellipse at 50% 85%, ${props.accent}33, transparent 55%), linear-gradient(180deg, #050a1c 0%, #0f2456 55%, #1c3f86 100%)` }}
+      role="img" aria-label={props.isBoss ? `Boss encounter${props.bossName ? `: ${props.bossName}` : ''}` : 'Your hero on the quest platform'}>
       <Canvas
         dpr={coarse ? 1 : [1, 1.5]}
-        camera={{ position: [0, 2.9, 8.5], fov: 45 }}
-        gl={{ antialias: !coarse }}
-        onCreated={({ camera }) => camera.lookAt(0, 2, 0)}
+        camera={{ position: [0, 4.4, 10.5], fov: 42 }}
+        gl={{ antialias: !coarse, alpha: true }}
+        style={{ background: 'transparent' }}
+        onCreated={({ camera }) => camera.lookAt(0, 1.4, 0)}
       >
         <StageScene {...props} reduced={reduced} coarse={coarse} />
       </Canvas>

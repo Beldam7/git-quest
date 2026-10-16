@@ -319,3 +319,7 @@ grep -r "TODO" src/game/adapters/
 ```
 
 All TODO markers in `StartNgAuthAdapter`, `StartNgCharacterAppearanceAdapter`, and `StartNgProgressAdapter` must be resolved with verified information before the integration is complete. Do NOT invent implementation details to remove a TODO.
+
+## Character appearance mapping (3D hero)
+
+The 3D hero (`src/game/hero/HeroModel.tsx`) currently maps `primaryColor` to the cloak, `secondaryColor` to the tunic and sleeves, `accentColor` to trim/buckles/pauldrons, and uses `materialVariant` and `accessory` on cloak/tunic and head/armor accessories. **This mapping is a local placeholder.** When Start.ng's centralized styling contract is verified, re-map the verified properties inside `CharacterAppearanceAdapter` and `HeroModel`; do not assume the property names above exist on the platform.

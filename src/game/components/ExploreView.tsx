@@ -10,6 +10,8 @@ import { getXpForNextLevel } from '../data/ranks';
 import { Player } from './WorldScene';
 import { Crystal } from './QuestStage';
 import { SceneBoundary } from './ui/SceneBoundary';
+import { TouchStick } from './ui/TouchStick';
+import type { StickVector } from './ui/TouchStick';
 import { usePrefersReducedMotion, useCoarsePointer } from '../hooks/usePrefersReducedMotion';
 import type { CharacterAppearance } from '../adapters/CharacterAppearanceAdapter';
 
@@ -31,7 +33,6 @@ interface PortalInfo {
 }
 
 type MoveKeys = { forward: boolean; back: boolean; left: boolean; right: boolean };
-type StickVector = { x: number; z: number };
 
 const KEY_MAP: Record<string, keyof MoveKeys> = {
   KeyW: 'forward', ArrowUp: 'forward',
@@ -157,6 +158,7 @@ function PlayerController({ appearance, portals, stick, onNearChange }: Controll
   const group = useRef<THREE.Group>(null);
   const keys = useRef<MoveKeys>({ forward: false, back: false, left: false, right: false });
   const heading = useRef(Math.PI);
+  const speed = useRef(0);
   const nearRef = useRef<number | null>(null);
   const desired = useMemo(() => new THREE.Vector3(), []);
   const lookAt = useMemo(() => new THREE.Vector3(), []);
@@ -226,6 +228,8 @@ function PlayerController({ appearance, portals, stick, onNearChange }: Controll
       g.rotation.y = heading.current;
     }
 
+    speed.current += ((mag > 0.08 ? Math.min(1, mag) : 0) - speed.current) * Math.min(1, dt * 10);
+
     // Third-person follow camera: behind and above, eased, frame-rate independent.
     desired.set(g.position.x, 9, g.position.z + 14);
     camera.position.lerp(desired, 1 - Math.exp(-dt * 5));
@@ -250,7 +254,7 @@ function PlayerController({ appearance, portals, stick, onNearChange }: Controll
 
   return (
     <group ref={group} position={SPAWN} rotation={[0, Math.PI, 0]}>
-      <Player appearance={appearance} position={[0, 0, 0]} spin={false} />
+      <Player appearance={appearance} position={[0, 0, 0]} spin={false} speedRef={speed} />
     </group>
   );
 }
@@ -321,57 +325,6 @@ function Kingdom({ portals, nearId, reduced, coarse }: { portals: PortalInfo[]; 
         <PortalPillar key={p.id} portal={p} highlighted={p.id === nearId} reduced={reduced} />
       ))}
     </>
-  );
-}
-
-/** On-screen movement stick for touch devices. Writes a -1..1 vector the 3D controller reads each frame. */
-function TouchStick({ vector }: { vector: MutableRefObject<StickVector> }) {
-  const RADIUS = 48;
-  const base = useRef<HTMLDivElement>(null);
-  const [knob, setKnob] = useState({ x: 0, y: 0 });
-
-  const update = (e: React.PointerEvent) => {
-    const el = base.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    let dx = e.clientX - (rect.left + rect.width / 2);
-    let dy = e.clientY - (rect.top + rect.height / 2);
-    const len = Math.hypot(dx, dy);
-    if (len > RADIUS) {
-      dx = (dx / len) * RADIUS;
-      dy = (dy / len) * RADIUS;
-    }
-    setKnob({ x: dx, y: dy });
-    const nx = dx / RADIUS;
-    const nz = dy / RADIUS;
-    vector.current = Math.hypot(nx, nz) < 0.15 ? { x: 0, z: 0 } : { x: nx, z: nz }; // small dead zone
-  };
-  const end = () => {
-    setKnob({ x: 0, y: 0 });
-    vector.current = { x: 0, z: 0 };
-  };
-
-  return (
-    <div
-      ref={base}
-      role="group"
-      aria-label="Movement stick"
-      className="absolute bottom-6 left-6 h-32 w-32 touch-none select-none rounded-full border border-kq-edge bg-kq-deep/70 backdrop-blur"
-      onPointerDown={(e) => {
-        e.currentTarget.setPointerCapture(e.pointerId);
-        update(e);
-      }}
-      onPointerMove={(e) => {
-        if (e.currentTarget.hasPointerCapture(e.pointerId)) update(e);
-      }}
-      onPointerUp={end}
-      onPointerCancel={end}
-    >
-      <div
-        className="absolute left-1/2 top-1/2 h-14 w-14 -translate-x-1/2 -translate-y-1/2 rounded-full border border-kq-cyan/70 bg-kq-cyan/25"
-        style={{ transform: `translate(calc(-50% + ${knob.x}px), calc(-50% + ${knob.y}px))` }}
-      />
-    </div>
   );
 }
 

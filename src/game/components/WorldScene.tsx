@@ -2,6 +2,8 @@ import { useRef, useMemo, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text, Float, Sphere, Cone, Cylinder, Box, Cloud, Clouds } from '@react-three/drei';
 import * as THREE from 'three';
+import type { MutableRefObject } from 'react';
+import { HeroModel } from '../hero/HeroModel';
 import { WORLDS } from '../data/worlds';
 import type { GameProgress } from '../types';
 import type { CharacterAppearance } from '../adapters/CharacterAppearanceAdapter';
@@ -116,118 +118,18 @@ function Crystal({ position, color = '#3b82f6' }: { position: [number, number, n
   );
 }
 
-export function Player({ appearance, position, spin = true }: { appearance: CharacterAppearance; position: [number, number, number]; spin?: boolean }) {
-  const groupRef = useRef<THREE.Group>(null);
-  const bodyRef = useRef<THREE.Mesh>(null);
-  const headRef = useRef<THREE.Mesh>(null);
-  const leftArmRef = useRef<THREE.Mesh>(null);
-  const rightArmRef = useRef<THREE.Mesh>(null);
-
-  useFrame((state, delta) => {
-    if (groupRef.current) {
-      groupRef.current.position.y = position[1] + Math.sin(state.clock.elapsedTime * 2) * 0.25;
-      if (spin) groupRef.current.rotation.y += delta * 0.3;
-    }
-    if (bodyRef.current) {
-      bodyRef.current.rotation.x = Math.sin(state.clock.elapsedTime * 3) * 0.05;
-    }
-    if (headRef.current) {
-      headRef.current.rotation.y = Math.sin(state.clock.elapsedTime * 1.5) * 0.3;
-    }
-    if (leftArmRef.current) {
-      leftArmRef.current.rotation.x = Math.sin(state.clock.elapsedTime * 3) * 0.3;
-    }
-    if (rightArmRef.current) {
-      rightArmRef.current.rotation.x = -Math.sin(state.clock.elapsedTime * 3) * 0.3;
-    }
-  });
-
-  const matProps = useMemo(() => {
-    const base: THREE.MeshStandardMaterialParameters = {
-      color: appearance.primaryColor,
-      roughness: 0.5,
-    };
-    if (appearance.materialVariant === 'metallic') {
-      base.metalness = 0.9;
-      base.roughness = 0.2;
-    } else if (appearance.materialVariant === 'crystal') {
-      base.transparent = true;
-      base.opacity = 0.7;
-      base.metalness = 0.3;
-    } else if (appearance.materialVariant === 'phoenix') {
-      base.emissive = appearance.accentColor;
-      base.emissiveIntensity = 0.3;
-    }
-    return base;
-  }, [appearance]);
-
+export function Player({
+  appearance, position, spin = true, speedRef,
+}: {
+  appearance: CharacterAppearance;
+  position: [number, number, number];
+  spin?: boolean;
+  speedRef?: MutableRefObject<number>;
+}) {
+  // The hero is now the articulated HeroModel (see src/game/hero/HeroModel.tsx).
   return (
-    <group ref={groupRef} position={position}>
-      {/* Body */}
-      <mesh ref={bodyRef} castShadow position={[0, 1, 0]}>
-        <capsuleGeometry args={[0.6, 1.2, 8, 16]} />
-        <meshStandardMaterial {...matProps} />
-      </mesh>
-      {/* Head */}
-      <mesh ref={headRef} castShadow position={[0, 2.2, 0]}>
-        <sphereGeometry args={[0.5, 16, 16]} />
-        <meshStandardMaterial color={appearance.secondaryColor} roughness={0.5} />
-      </mesh>
-      {/* Arms */}
-      <mesh ref={leftArmRef} castShadow position={[0.7, 1.4, 0]}>
-        <capsuleGeometry args={[0.18, 0.7, 6, 12]} />
-        <meshStandardMaterial {...matProps} />
-      </mesh>
-      <mesh ref={rightArmRef} castShadow position={[-0.7, 1.4, 0]}>
-        <capsuleGeometry args={[0.18, 0.7, 6, 12]} />
-        <meshStandardMaterial {...matProps} />
-      </mesh>
-      {/* Eyes */}
-      <mesh position={[0.15, 2.3, 0.4]}>
-        <sphereGeometry args={[0.08, 8, 8]} />
-        <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={0.5} />
-      </mesh>
-      <mesh position={[-0.15, 2.3, 0.4]}>
-        <sphereGeometry args={[0.08, 8, 8]} />
-        <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={0.5} />
-      </mesh>
-      {/* Accessory */}
-      {appearance.accessory === 'cape' && (
-        <mesh position={[0, 1, -0.5]} rotation={[0.2, 0, 0]}>
-          <planeGeometry args={[1.5, 2]} />
-          <meshStandardMaterial color={appearance.accentColor} side={THREE.DoubleSide} roughness={0.6} />
-        </mesh>
-      )}
-      {appearance.accessory === 'helmet' && (
-        <mesh position={[0, 2.5, 0]}>
-          <sphereGeometry args={[0.55, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
-          <meshStandardMaterial color={appearance.accentColor} metalness={0.8} roughness={0.2} />
-        </mesh>
-      )}
-      {appearance.accessory === 'wizard_hat' && (
-        <group position={[0, 2.7, 0]}>
-          <Cone args={[0.5, 1.5, 16]}>
-            <meshStandardMaterial color={appearance.accentColor} roughness={0.6} />
-          </Cone>
-        </group>
-      )}
-      {appearance.accessory === 'dragon_armor' && (
-        <>
-          <mesh position={[0, 1.5, 0.55]}>
-            <boxGeometry args={[1.2, 0.6, 0.3]} />
-            <meshStandardMaterial color={appearance.accentColor} metalness={0.9} roughness={0.1} />
-          </mesh>
-          <mesh position={[0, 2.3, 0]} rotation={[0, 0, 0]}>
-            <coneGeometry args={[0.3, 0.4, 4]} />
-            <meshStandardMaterial color={appearance.accentColor} metalness={0.9} roughness={0.1} />
-          </mesh>
-        </>
-      )}
-      {/* Glow ring */}
-      <mesh position={[0, 0, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[1, 1.3, 32]} />
-        <meshStandardMaterial color={appearance.accentColor} emissive={appearance.accentColor} emissiveIntensity={0.5} transparent opacity={0.5} />
-      </mesh>
+    <group position={position}>
+      <HeroModel appearance={appearance} spin={spin} speedRef={speedRef} />
     </group>
   );
 }
