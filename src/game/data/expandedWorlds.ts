@@ -6,6 +6,26 @@ function makeState(overrides: Partial<RepositoryState>): RepositoryState {
   return { ...createInitialRepoState(), ...overrides };
 }
 
+/** True if `targetId` is the commit itself or one of its ancestors (so a merge that includes it counts too). */
+function reaches(state: RepositoryState, fromId: string | null | undefined, targetId: string): boolean {
+  const seen = new Set<string>();
+  const stack: string[] = fromId ? [fromId] : [];
+  while (stack.length > 0) {
+    const id = stack.pop() as string;
+    if (id === targetId) return true;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    stack.push(...(state.commits[id]?.parentIds ?? []));
+  }
+  return false;
+}
+
+/** The remote branch has been pushed and points at your own branch's latest commit (whatever you committed first). */
+function pushedBranch(state: RepositoryState, remote: string, branch: string): boolean {
+  const remoteHead = state.remotes[remote]?.branches[branch];
+  return !!remoteHead && remoteHead === state.branches[branch]?.headCommitId;
+}
+
 // ===== WORLD 4: Conflict Canyon =====
 export const world4Challenges: WorldChallenge[] = [
   {
@@ -208,7 +228,7 @@ export const world5Challenges: WorldChallenge[] = [
         description: 'Pull changes from origin',
         hint: 'git pull origin main  (or just git pull)',
         concept: 'git pull = git fetch + git merge. It downloads and integrates remote changes in one step.',
-        check: (state) => state.branches['main']?.headCommitId === 'r-new2',
+        check: (state) => reaches(state, state.branches['main']?.headCommitId, 'r-new2'),
         xpReward: 20,
       },
     ],
@@ -236,7 +256,7 @@ export const world5Challenges: WorldChallenge[] = [
         description: 'Push your commit to origin',
         hint: 'git push origin main  (or just git push)',
         concept: 'git push uploads your local commits to the remote repository.',
-        check: (state) => state.remotes['origin']?.branches['main'] === 'p1l2o3c',
+        check: (state) => pushedBranch(state, 'origin', 'main'),
         xpReward: 20,
       },
     ],
@@ -830,7 +850,7 @@ export const world8Challenges: WorldChallenge[] = [
         description: 'Push your feature branch to origin',
         hint: 'git push origin final-feature',
         concept: 'Push your completed work to the remote.',
-        check: (state) => state.remotes['origin']?.branches['final-feature'] === 'w8rfeat',
+        check: (state) => pushedBranch(state, 'origin', 'final-feature'),
         xpReward: 15,
       },
     ],
