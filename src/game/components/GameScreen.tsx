@@ -266,11 +266,6 @@ export function GameScreen() {
     if (defeated) defeatRef.current?.focus();
   }, [defeated]);
 
-  // A rebuilt world or a new monster starts un-engaged; the hero re-reports engagement on the next frame.
-  useEffect(() => {
-    setEngaged(false);
-  }, [runKey, challengeId]);
-
   const closeHelp = useCallback(() => {
     try { localStorage.setItem(HELP_KEY, '1'); } catch { /* storage unavailable: the tutorial will show again next visit */ }
     setShowHelp(false);
@@ -481,7 +476,7 @@ export function GameScreen() {
               </Suspense>
             </SceneBoundary>
 
-            {lastCombat?.type === 'player-hit' && lastCombat.damage > 0 && lastCombat.id > firstCombatId.current && <div key={lastCombat.id} className="hurt-flash" aria-hidden="true" />}
+            {lastCombat?.type === 'player-hit' && lastCombat.damage > 0 && lastCombat.id > firstCombatId.current && <div key={`hurt-${lastCombat.id}`} className="hurt-flash" aria-hidden="true" />}
 
             {/* The coach: always says exactly what to do next */}
             {challengeInfo && !defeated && (
@@ -554,14 +549,14 @@ export function GameScreen() {
             )}
 
             {/* Zoom */}
-            <div className="absolute right-3 top-1/2 z-10 flex -translate-y-1/2 flex-col gap-1.5" role="group" aria-label="Camera zoom">
+            <div className={`absolute right-3 z-10 flex gap-1.5 ${coarse ? 'bottom-28 flex-col' : 'bottom-3'}`} role="group" aria-label="Camera zoom">
               <button onClick={() => zoomBy(0.8)} className="kq-btn kq-btn-ghost !min-h-[40px] !w-10 !px-0" aria-label="Zoom in" title="Zoom in (+ or scroll up)"><ZoomIn size={18} /></button>
               <button onClick={() => zoomBy(1.25)} className="kq-btn kq-btn-ghost !min-h-[40px] !w-10 !px-0" aria-label="Zoom out" title="Zoom out (- or scroll down)"><ZoomOut size={18} /></button>
             </div>
 
             {toast && (
               <div
-                key={toast.id}
+                key={`toast-${toast.id}`}
                 className={`toast-pop kq-panel absolute bottom-6 left-1/2 z-20 px-4 py-2 text-lg font-bold ${
                   toast.kind === 'good' ? 'text-kq-emerald' : toast.kind === 'bad' ? 'text-kq-ruby' : toast.kind === 'gem' ? 'text-kq-cyan' : 'text-kq-gold'
                 }`}

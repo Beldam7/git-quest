@@ -230,21 +230,86 @@ describe('Git Simulator - Remote Operations', () => {
     expect(newState.branches['main'].headCommitId).toBe('local1');
   });
 
-  it('git pull integrates remote changes', () => {
-    const state = stateWithFiles([]);
-    state.commits['local1'] = {
-      id: 'local1', message: 'Local', parentIds: [], branch: 'main',
-      files: [createFile('app.js', 'local', true)], timestamp: Date.now(),
+  describe('pull and push follow real Git rules', () => {
+    const commit = (state: ReturnType<typeof stateWithFiles>, id: string, parents: string[], file: string) => {
+      state.commits[id] = { id, message: id, parentIds: parents, branch: 'main', files: [createFile(file, id, true)], timestamp: Date.now() };
     };
-    state.commits['remote1'] = {
-      id: 'remote1', message: 'Remote update', parentIds: [], branch: 'main',
-      files: [createFile('app.js', 'remote', true)], timestamp: Date.now(),
+    const withRemote = (state: ReturnType<typeof stateWithFiles>, remoteTip: string | null) => {
+      state.remotes = { origin: { name: 'origin', url: 'https://github.com/test/repo.git', branches: { main: remoteTip } } };
     };
-    state.branches['main'].headCommitId = 'local1';
-    state.remotes = { origin: { name: 'origin', url: 'https://github.com/test/repo.git', branches: { main: 'remote1' } } };
-    const { result, newState } = executeCommand(state, 'git pull origin main');
-    expect(result.success).toBe(true);
-    expect(newState.branches['main'].headCommitId).toBe('remote1');
+
+    it('pull with diverged histories makes a merge commit that keeps BOTH sides', () => {
+      const state = stateWithFiles([]);
+      commit(state, 'local1', [], 'local.js');
+      commit(state, 'remote1', [], 'remote.js');
+      state.branches['main'].headCommitId = 'local1';
+      withRemote(state, 'remote1');
+      const { result, newState } = executeCommand(state, 'git pull origin main');
+      expect(result.success).toBe(true);
+      const head = newState.commits[newState.branches['main'].headCommitId as string];
+      expect(head.parentIds).toEqual(['local1', 'remote1']);
+      expect(head.files.map((f) => f.name).sort()).toEqual(['local.js', 'remote.js']);
+    });
+
+    it('pull when you are behind fast-forwards to the remote commit', () => {
+      const state = stateWithFiles([]);
+      commit(state, 'base', [], 'a.js');
+      commit(state, 'remote1', ['base'], 'a.js');
+      state.branches['main'].headCommitId = 'base';
+      withRemote(state, 'remote1');
+      const { result, newState } = executeCommand(state, 'git pull');
+      expect(result.output.join(' ')).toMatch(/Fast-forward/);
+      expect(newState.branches['main'].headCommitId).toBe('remote1');
+    });
+
+    it('pull when you are ahead changes nothing ("Already up to date")', () => {
+      const state = stateWithFiles([]);
+      commit(state, 'base', [], 'a.js');
+      commit(state, 'mine', ['base'], 'a.js');
+      state.branches['main'].headCommitId = 'mine';
+      withRemote(state, 'base');
+      const { result, newState } = executeCommand(state, 'git pull');
+      expect(result.output.join(' ')).toMatch(/up to date/i);
+      expect(newState.branches['main'].headCommitId).toBe('mine');
+    });
+
+    it('push when you are ahead of the remote succeeds and moves the remote forward', () => {
+      const state = stateWithFiles([]);
+      commit(state, 'base', [], 'a.js');
+      commit(state, 'mine', ['base'], 'a.js');
+      state.branches['main'].headCommitId = 'mine';
+      withRemote(state, 'base');
+      const { result, newState } = executeCommand(state, 'git push origin main');
+      expect(result.success).toBe(true);
+      expect(newState.remotes['origin'].branches['main']).toBe('mine');
+    });
+
+    it('push is rejected only when the remote has commits you do not have', () => {
+      const state = stateWithFiles([]);
+      commit(state, 'local1', [], 'l.js');
+      commit(state, 'remote1', [], 'r.js');
+      state.branches['main'].headCommitId = 'local1';
+      withRemote(state, 'remote1');
+      const { result, newState } = executeCommand(state, 'git push origin main');
+      expect(result.success).toBe(false);
+      expect(newState.rejectedPush).toBe(true);
+      expect(newState.remotes['origin'].branches['main']).toBe('remote1');
+    });
+
+    it('pull then push after a rejection succeeds, and pushing again is "up-to-date"', () => {
+      let state = stateWithFiles([]);
+      commit(state, 'local1', [], 'l.js');
+      commit(state, 'remote1', [], 'r.js');
+      state.branches['main'].headCommitId = 'local1';
+      withRemote(state, 'remote1');
+      state = executeCommand(state, 'git push origin main').newState;
+      state = executeCommand(state, 'git pull origin main').newState;
+      const pushed = executeCommand(state, 'git push origin main');
+      expect(pushed.result.success).toBe(true);
+      expect(pushed.newState.remotes['origin'].branches['main']).toBe(pushed.newState.branches['main'].headCommitId);
+      expect(pushed.newState.rejectedPush).toBe(false);
+      expect(executeCommand(pushed.newState, 'git push origin main').result.output.join(' ')).toMatch(/up-to-date/);
+    });
   });
 
   it('git push uploads commits to remote', () => {
