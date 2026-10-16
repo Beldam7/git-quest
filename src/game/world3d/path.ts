@@ -1,5 +1,6 @@
 import type { WorldDef } from './types';
 import { smoothstep } from './noise';
+import { deriveSignals } from './signals';
 
 /** A polyline route through a world with cumulative arc lengths. */
 export interface PathInfo {
@@ -105,6 +106,14 @@ export function buildStations(def: WorldDef, path: PathInfo, challenges: Challen
 /** Gems per world: three per leg of the route (legs = normal monsters + 1). Kept here so the HUD can count without loading 3D code. */
 export const gemCount = (normalMonsters: number) => 3 * (normalMonsters + 1);
 
+const NEUTRAL = deriveSignals(null, 0, 1);
+
+/** A gem may rest here if the hero can stand there and no scenery obstacle covers the spot. */
+function gemSpotIsFree(def: WorldDef, x: number, z: number): boolean {
+  if ((def.obstacles ?? []).some(([ox, oz, or]) => Math.hypot(x - ox, z - oz) < or + 0.5)) return false;
+  return !def.walkable || def.walkable(x, z, NEUTRAL);
+}
+
 export interface Gem {
   id: string;
   pos: [number, number];
@@ -124,8 +133,13 @@ export function buildGems(def: WorldDef, path: PathInfo, stations: Station[]): G
       const tx = bx - ax;
       const tz = bz - az;
       const len = Math.hypot(tx, tz) || 1;
-      const side = (n % 2 === 0 ? 1 : -1) * 1.5;
-      out.push({ id: `g${def.id}-${n}`, pos: [x + (-tz / len) * side, z + (tx / len) * side] });
+      // Prefer alternating sides of the road, but only on ground you can actually stand on and that is clear of
+      // scenery (e.g. not over a ravine or lava beside a bridge, and not inside a rock); else use the centre line.
+      const preferred = (n % 2 === 0 ? 1 : -1) * 1.5;
+      const spot = [preferred, -preferred, 0]
+        .map((side): [number, number] => [x + (-tz / len) * side, z + (tx / len) * side])
+        .find(([gx, gz]) => gemSpotIsFree(def, gx, gz)) ?? [x, z];
+      out.push({ id: `g${def.id}-${n}`, pos: spot });
       n++;
     }
   }

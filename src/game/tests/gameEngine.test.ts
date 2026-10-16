@@ -355,3 +355,40 @@ describe('Friendlier learning: explanations, practice, abilities, hints', () => 
     expect(text()).toMatch(/Remember/);
   });
 });
+
+
+describe('Quest objectives accept any correct way to do the task', () => {
+  function play(challengeId: string, commands: string[]) {
+    const events: string[] = [];
+    const engine = new GameEngine({ ...mockCallbacks, onCombat: (e) => events.push(e.type) });
+    engine.startNewGame();
+    engine.startChallenge(challengeId);
+    for (const c of commands) engine.processCommand(c);
+    return { engine, events, done: events.includes('defeated') };
+  }
+
+  it('Send Your Work: pushing straight away works', () => {
+    expect(play('w5_c4_push', ['git push origin main']).done).toBe(true);
+    expect(play('w5_c4_push', ['git push']).done).toBe(true);
+  });
+
+  it('Send Your Work: committing first, then pushing, also works (the remote gets your new commit)', () => {
+    const r = play('w5_c4_push', ['git add .', 'git commit -m "my change"', 'git push origin main']);
+    expect(r.done).toBe(true);
+  });
+
+  it('Send Your Work: nothing counts until you actually push', () => {
+    expect(play('w5_c4_push', ['git status', 'git add .', 'git commit -m "x"']).done).toBe(false);
+  });
+
+  it('Sync with the Citadel: pushing the feature branch works, with or without a commit first', () => {
+    expect(play('w8_c4_remote', ['git push origin final-feature']).done).toBe(true);
+    expect(play('w8_c4_remote', ['git add .', 'git commit -m "polish"', 'git push origin final-feature']).done).toBe(true);
+    expect(play('w8_c4_remote', ['git status']).done).toBe(false);
+  });
+
+  it('Accept the Changes: pulling works', () => {
+    expect(play('w5_c3_pull', ['git pull']).done).toBe(true);
+    expect(play('w5_c3_pull', ['git status']).done).toBe(false);
+  });
+});

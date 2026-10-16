@@ -146,8 +146,8 @@ function Bolt({ item }: { item: FxItem }) {
   useFrame((st) => {
     const grp = g.current;
     if (!grp) return;
-    if (t0.current === null) t0.current = st.clock.elapsedTime;
-    const t = st.clock.elapsedTime - t0.current - item.delay;
+    const start: number = t0.current ?? (t0.current = st.clock.elapsedTime);
+    const t = st.clock.elapsedTime - start - item.delay;
     if (t < 0 || t > item.life) { grp.visible = false; return; }
     const k = t / item.life;
     grp.visible = true;
@@ -178,8 +178,8 @@ function Burst({ item }: { item: FxItem }) {
     [item.size]
   );
   useFrame((st) => {
-    if (t0.current === null) t0.current = st.clock.elapsedTime;
-    const t = st.clock.elapsedTime - t0.current - item.delay;
+    const start: number = t0.current ?? (t0.current = st.clock.elapsedTime);
+    const t = st.clock.elapsedTime - start - item.delay;
     const live = t >= 0 && t <= item.life;
     const k = Math.max(0, Math.min(1, t / item.life));
     dirs.forEach((d, i) => {
@@ -376,6 +376,8 @@ interface HeroProps {
   onBlocked: (reason: 'monster' | 'edge') => void;
   events: CombatEvent[];
   heroPosRef: MutableRefObject<THREE.Vector3>;
+  /** What the screen currently believes: is the hero inside the active monster's battle zone? */
+  engaged: boolean;
   /** Set to true to request a jump (the hero consumes it). */
   jumpRef: MutableRefObject<boolean>;
 }
@@ -387,6 +389,7 @@ function Hero(props: HeroProps) {
   const keys = useRef<MoveKeys>({ forward: false, back: false, left: false, right: false });
   const heading = useRef(Math.PI);
   const engagedRef = useRef(false);
+  const engagedSentAt = useRef(-10);
   const taken = useRef<Set<string>>(new Set());
   const shake = useRef(0);
   const lastBlockedAt = useRef(-10);
@@ -566,9 +569,15 @@ function Hero(props: HeroProps) {
 
     // Fight starts when you are inside the monster's battle zone.
     const engagedNow = !!act && toAct <= act.engage;
-    if (engagedNow !== engagedRef.current) {
+    // Report changes, and re-report if the screen's idea of "engaged" ever disagrees with reality
+    // (after a restart, or when the next monster becomes the target), at most twice a second.
+    const clock = state.clock.elapsedTime;
+    if (engagedNow !== p.engaged && (engagedNow !== engagedRef.current || clock - engagedSentAt.current > 0.5)) {
       engagedRef.current = engagedNow;
+      engagedSentAt.current = clock;
       p.onEngagedChange(engagedNow);
+    } else if (engagedNow === p.engaged) {
+      engagedRef.current = engagedNow;
     }
 
     // Gems
@@ -734,6 +743,7 @@ export function WorldCanvas(props: WorldCanvasProps) {
           onBlocked={props.onBlocked}
           events={props.events}
           heroPosRef={heroPos}
+          engaged={props.engaged}
           jumpRef={props.jumpRef}
         />
         <CombatFx events={props.events} heroPos={heroPos} target={fxTarget} reduced={reduced} />

@@ -81,6 +81,19 @@ function getCommitChain(state: RepositoryState, commitId: string | null): SimCom
   return chain;
 }
 
+/** Every commit reachable from `commitId`, following ALL parents (so merge commits include both sides). */
+function getAncestorIds(state: RepositoryState, commitId: string | null): Set<string> {
+  const seen = new Set<string>();
+  const stack: string[] = commitId ? [commitId] : [];
+  while (stack.length > 0) {
+    const id = stack.pop() as string;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    for (const parent of state.commits[id]?.parentIds ?? []) stack.push(parent);
+  }
+  return seen;
+}
+
 function addReflog(state: RepositoryState, action: string, commitId: string): void {
   state.reflog.unshift({ action, commitId, timestamp: Date.now() });
   if (state.reflog.length > 50) state.reflog = state.reflog.slice(0, 50);
@@ -788,9 +801,14 @@ function handlePull(state: RepositoryState, args: string[]): { result: CommandRe
   // Fetch + merge
   const trackingName = `${remoteName}/${state.currentBranch}`;
   state.branches[trackingName] = { name: trackingName, headCommitId: remoteCommitId, isRemote: true, remoteName };
-  // Try fast-forward
-  const ourChain = new Set(getCommitChain(state, localHead).map((c) => c.id));
-  if (ourChain.has(remoteCommitId) || !localHead) {
+  const ourChain = getAncestorIds(state, localHead);
+  const remoteChain = getAncestorIds(state, remoteCommitId);
+  // We already have everything the remote has (the remote commit is one of our own ancestors).
+  if (localHead && ourChain.has(remoteCommitId)) {
+    return { result: { success: true, output: ['Already up to date.'], stateChange: false, xpAwarded: 2 }, newState: state };
+  }
+  // Fast-forward: we are simply behind, so our branch just moves up to the remote's commit.
+  if (!localHead || remoteChain.has(localHead)) {
     state.branches[state.currentBranch].headCommitId = remoteCommitId;
     const remoteCommit = state.commits[remoteCommitId];
     if (remoteCommit) state.files = cloneFiles(remoteCommit.files);
@@ -800,13 +818,24 @@ function handlePull(state: RepositoryState, args: string[]): { result: CommandRe
       newState: state,
     };
   }
-  // Simulate merge — update head to remote
-  state.branches[state.currentBranch].headCommitId = remoteCommitId;
-  const remoteCommit = state.commits[remoteCommitId];
-  if (remoteCommit) state.files = cloneFiles(remoteCommit.files);
-  addReflog(state, `pull: merge`, remoteCommitId);
+  // Both sides have new commits: make a real merge commit that keeps BOTH histories (your commit is not lost).
+  const ourCommit = state.commits[localHead];
+  const theirCommit = state.commits[remoteCommitId];
+  const mergeCommitId = generateCommitId();
+  const mergedFiles = [...(ourCommit?.files ?? []), ...(theirCommit?.files ?? []).filter((tf) => !ourCommit?.files.find((of) => of.name === tf.name))];
+  state.commits[mergeCommitId] = {
+    id: mergeCommitId,
+    message: `Merge branch '${state.currentBranch}' of ${remote.url}`,
+    parentIds: [localHead, remoteCommitId],
+    branch: state.currentBranch,
+    files: mergedFiles,
+    timestamp: Date.now(),
+  };
+  state.branches[state.currentBranch].headCommitId = mergeCommitId;
+  state.files = cloneFiles(mergedFiles);
+  addReflog(state, `pull: merge ${mergeCommitId}`, mergeCommitId);
   return {
-    result: { success: true, output: ['Merge made by recursive strategy.', 'Remote changes integrated.'], stateChange: true, xpAwarded: 8, concept: 'git pull fetches and merges. If the remote and local both have new commits, it creates a merge commit.' },
+    result: { success: true, output: ['Merge made by the \'ort\' strategy.', 'Remote changes integrated.'], stateChange: true, xpAwarded: 8, concept: 'git pull fetches and merges. If the remote and local both have new commits, it creates a merge commit that keeps both histories.' },
     newState: state,
   };
 }
@@ -822,31 +851,35 @@ function handlePush(state: RepositoryState, args: string[]): { result: CommandRe
   }
   const localHead = getHeadCommitId(state);
   const remoteHead = remote.branches[state.currentBranch];
-  // Check for rejected push (remote has commits we don't)
-  if (remoteHead && localHead) {
-    const remoteChain = new Set(getCommitChain(state, remoteHead).map((c) => c.id));
-    if (!remoteChain.has(localHead)) {
-      state.rejectedPush = true;
-      state.pushRejectionBranch = state.currentBranch;
-      return {
-        result: {
-          success: false,
-          output: [`To ${remote.url}`, ` ! [rejected]          ${state.currentBranch} -> ${state.currentBranch} (fetch first)`, 'error: failed to push some refs', '', "hint: Updates were rejected because the remote contains work that you do not have locally. Try 'git pull' first."],
-          stateChange: false,
-          xpAwarded: 2,
-          concept: 'git push fails if the remote has commits you do not have. You must pull (fetch + merge) first, then push again.',
-        },
-        newState: state,
-      };
-    }
+  // Real Git rejects a push only when the remote has commits you do not have (its tip is not in YOUR history).
+  const ourChain = getAncestorIds(state, localHead);
+  if (remoteHead && localHead && !ourChain.has(remoteHead)) {
+    state.rejectedPush = true;
+    state.pushRejectionBranch = state.currentBranch;
+    return {
+      result: {
+        success: false,
+        output: [`To ${remote.url}`, ` ! [rejected]          ${state.currentBranch} -> ${state.currentBranch} (fetch first)`, 'error: failed to push some refs', '', "hint: Updates were rejected because the remote contains work that you do not have locally. Try 'git pull' first."],
+        stateChange: false,
+        xpAwarded: 2,
+        concept: 'git push fails if the remote has commits you do not have. You must pull (fetch + merge) first, then push again.',
+      },
+      newState: state,
+    };
+  }
+  if (remoteHead && remoteHead === localHead) {
+    return { result: { success: true, output: ['Everything up-to-date'], stateChange: false, xpAwarded: 2 }, newState: state };
   }
   remote.branches[state.currentBranch] = localHead;
   state.rejectedPush = false;
   state.pushRejectionBranch = null;
+  const updateLine = remoteHead
+    ? `   ${remoteHead.slice(0, 7)}..${(localHead ?? '').slice(0, 7)}  ${state.currentBranch} -> ${state.currentBranch}`
+    : ` * [new branch]      ${state.currentBranch} -> ${state.currentBranch}`;
   return {
     result: {
       success: true,
-      output: [`To ${remote.url}`, ` * [new branch]      ${state.currentBranch} -> ${state.currentBranch}`, '', 'Push successful!'],
+      output: [`To ${remote.url}`, updateLine, '', 'Push successful!'],
       stateChange: true,
       xpAwarded: 8,
       concept: 'git push uploads your local commits to a remote repository so others can see and pull them.',
